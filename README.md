@@ -6,8 +6,8 @@ sites.
 | Chart | Version | Purpose |
 | --- | --- | --- |
 | `attune` | `0.4.1` | Attune services, workers, PostgreSQL, and RabbitMQ |
-| `attune-site` | `0.1.0` | `attunedev.org` and its inquiry form |
-| `attune-docs-site` | `0.1.0` | `docs.attunedev.org` |
+| `attune-site` | `0.1.1` | `attunedev.org` and its inquiry form |
+| `attune-docs-site` | `0.1.1` | `docs.attunedev.org` |
 
 ## Add the repository
 
@@ -54,10 +54,7 @@ cluster. Override the values under `security`, `database`, `rabbitmq`, and
 uses the development bootstrap password `TestPass123!`; change it after the
 first login.
 
-The site charts default to node-local images named `attune-site:local` and
-`attune-docs-site:local`. Build and import those images into k3s before you
-install the charts, or set `image.repository` and `image.tag` to images in a
-registry that every cluster node can read.
+The site charts pull public, versioned images from `ghcr.io/attune-system`.
 
 Each chart has its own configuration guide:
 

@@ -1,8 +1,8 @@
 replicaCount: 1
 
 image:
-  repository: attune-docs-site
-  tag: local
+  repository: ghcr.io/attune-system/attune-docs-site
+  tag: 0.1.0
   pullPolicy: IfNotPresent
 imagePullSecrets: []
 

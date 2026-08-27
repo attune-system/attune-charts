@@ -2,8 +2,7 @@
 
 This chart installs the static documentation site.
 
-Build and import the `attune-docs-site:local` image on each k3s node. Then
-install the chart:
+Install the chart:
 
 ```bash
 helm upgrade --install attune-docs-site attune/attune-docs-site \
@@ -11,8 +10,9 @@ helm upgrade --install attune-docs-site attune/attune-docs-site \
   --create-namespace
 ```
 
-For a registry image, set `image.repository` and `image.tag`. Set
-`imagePullSecrets` when the registry requires authentication.
+The chart defaults to the public
+`ghcr.io/attune-system/attune-docs-site:0.1.0` image. Set `image.repository`,
+`image.tag`, and `imagePullSecrets` to use a private image instead.
 
 ## Configure TLS
 

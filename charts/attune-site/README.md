@@ -4,8 +4,7 @@ This chart installs the public site and its SMTP-backed inquiry form.
 
 ## Install with a pre-created SMTP Secret
 
-Build and import the `attune-site:local` image on each k3s node. Then create the
-SMTP Secret in the release namespace:
+Create the SMTP Secret in the release namespace:
 
 ```bash
 kubectl -n attune-sites create secret generic attune-site-smtp \
@@ -23,8 +22,9 @@ helm upgrade --install attune-site attune/attune-site \
   --create-namespace
 ```
 
-For a registry image, set `image.repository` and `image.tag`. Set
-`imagePullSecrets` when the registry requires authentication.
+The chart defaults to the public
+`ghcr.io/attune-system/attune-site:0.1.0` image. Set `image.repository`,
+`image.tag`, and `imagePullSecrets` to use a private image instead.
 
 ## Configure TLS
 
