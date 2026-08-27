@@ -3,7 +3,7 @@ set -euo pipefail
 
 root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 packages_dir="$root_dir/packages"
-repository_url="https://raw.githubusercontent.com/attune-system/attune-charts/main/packages"
+repository_url="packages"
 
 mkdir -p "$packages_dir"
 

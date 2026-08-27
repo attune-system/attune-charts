@@ -12,7 +12,7 @@ entries:
     - https://github.com/attune-system/attune
     type: application
     urls:
-    - https://raw.githubusercontent.com/attune-system/attune-charts/main/packages/attune-0.4.1.tgz
+    - packages/attune-0.4.1.tgz
     version: 0.4.1
   attune-docs-site:
   - apiVersion: v2
@@ -26,7 +26,7 @@ entries:
     - https://github.com/attune-system/attune-docs-site
     type: application
     urls:
-    - https://raw.githubusercontent.com/attune-system/attune-charts/main/packages/attune-docs-site-0.1.0.tgz
+    - packages/attune-docs-site-0.1.0.tgz
     version: 0.1.0
   attune-site:
   - apiVersion: v2
@@ -40,6 +40,6 @@ entries:
     - https://github.com/attune-system/attune-site
     type: application
     urls:
-    - https://raw.githubusercontent.com/attune-system/attune-charts/main/packages/attune-site-0.1.0.tgz
+    - packages/attune-site-0.1.0.tgz
     version: 0.1.0
 generated: "2026-08-27T12:24:27.373242049-05:00"
