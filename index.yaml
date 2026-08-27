@@ -1,0 +1,45 @@
+apiVersion: v1
+entries:
+  attune:
+  - apiVersion: v2
+    appVersion: 0.4.0
+    created: "2026-08-27T12:24:27.375087659-05:00"
+    description: Helm chart for deploying the Attune automation platform
+    digest: b02dc380097a8d23eff5a9995daa5f37a0cebb84d4034ab8d2437cfc12028213
+    home: https://github.com/attune-system/attune
+    name: attune
+    sources:
+    - https://github.com/attune-system/attune
+    type: application
+    urls:
+    - https://raw.githubusercontent.com/attune-system/attune-charts/main/packages/attune-0.4.1.tgz
+    version: 0.4.1
+  attune-docs-site:
+  - apiVersion: v2
+    appVersion: 0.1.0
+    created: "2026-08-27T12:24:27.375685395-05:00"
+    description: Public documentation site for Attune
+    digest: ece8f8de35fe4b4c851cc2a2dbfa53dc12f4d71e9572d9570f82288470c44b37
+    home: https://docs.attunedev.org
+    name: attune-docs-site
+    sources:
+    - https://github.com/attune-system/attune-docs-site
+    type: application
+    urls:
+    - https://raw.githubusercontent.com/attune-system/attune-charts/main/packages/attune-docs-site-0.1.0.tgz
+    version: 0.1.0
+  attune-site:
+  - apiVersion: v2
+    appVersion: 0.1.0
+    created: "2026-08-27T12:24:27.376079012-05:00"
+    description: Public website for Attune
+    digest: 7cf8b5d2a2c1f6ee3aa0a091e90029b1dd72b8a19e83a2a21dfd8eb5191bf09b
+    home: https://attunedev.org
+    name: attune-site
+    sources:
+    - https://github.com/attune-system/attune-site
+    type: application
+    urls:
+    - https://raw.githubusercontent.com/attune-system/attune-charts/main/packages/attune-site-0.1.0.tgz
+    version: 0.1.0
+generated: "2026-08-27T12:24:27.373242049-05:00"

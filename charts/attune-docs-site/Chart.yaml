@@ -1,0 +1,9 @@
+apiVersion: v2
+name: attune-docs-site
+description: Public documentation site for Attune
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+home: https://docs.attunedev.org
+sources:
+  - https://github.com/attune-system/attune-docs-site

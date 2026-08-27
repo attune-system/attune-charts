@@ -1,0 +1,75 @@
+# Attune Helm charts
+
+This repository publishes Helm charts for the Attune platform and its public
+sites.
+
+| Chart | Version | Purpose |
+| --- | --- | --- |
+| `attune` | `0.4.1` | Attune services, workers, PostgreSQL, and RabbitMQ |
+| `attune-site` | `0.1.0` | `attunedev.org` and its inquiry form |
+| `attune-docs-site` | `0.1.0` | `docs.attunedev.org` |
+
+## Add the repository
+
+Use the raw GitHub URL as a Helm repository:
+
+```bash
+helm repo add attune https://raw.githubusercontent.com/attune-system/attune-charts/main
+helm repo update attune
+helm search repo attune
+```
+
+In Rancher, open **Apps > Repositories** and add this repository URL:
+
+```text
+https://raw.githubusercontent.com/attune-system/attune-charts/main
+```
+
+After Rancher refreshes the repository, install any chart from **Apps > Charts**.
+
+## Install a chart
+
+Install the Attune platform:
+
+```bash
+helm upgrade --install attune attune/attune \
+  --namespace attune \
+  --create-namespace \
+  --wait \
+  --wait-for-jobs
+```
+
+The platform chart pulls Attune `0.4.0` images from
+`ghcr.io/attune-system/attune`. Its default credentials are for a development
+cluster. Override the values under `security`, `database`, `rabbitmq`, and
+`bootstrap.testUser.login` before a production installation. Attune `0.4.0`
+uses the development bootstrap password `TestPass123!`; change it after the
+first login.
+
+The site charts default to node-local images named `attune-site:local` and
+`attune-docs-site:local`. Build and import those images into k3s before you
+install the charts, or set `image.repository` and `image.tag` to images in a
+registry that every cluster node can read.
+
+Each chart has its own configuration guide:
+
+- [`charts/attune/README.md`](charts/attune/README.md)
+- [`charts/attune-site/README.md`](charts/attune-site/README.md)
+- [`charts/attune-docs-site/README.md`](charts/attune-docs-site/README.md)
+
+## Publish chart packages
+
+Run the package script after you change a chart version or chart source:
+
+```bash
+./scripts/package.sh
+```
+
+The script writes chart archives to `packages/` and regenerates `index.yaml`.
+Commit the chart source, package archive, and index in the same change.
+
+Run all chart checks with:
+
+```bash
+./scripts/verify.sh
+```

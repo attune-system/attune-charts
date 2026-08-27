@@ -1,0 +1,61 @@
+replicaCount: 1
+
+image:
+  repository: attune-site
+  tag: local
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+nameOverride: ""
+fullnameOverride: ""
+
+siteOrigin: https://attunedev.org
+trustProxyHeaders: true
+
+smtp:
+  existingSecret: attune-site-smtp
+  host: ""
+  port: 587
+  username: ""
+  password: ""
+  from: ""
+  recipient: info@attunedev.org
+  tlsMode: starttls
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: true
+  className: traefik
+  annotations: {}
+  hosts:
+    - host: attunedev.org
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+resources:
+  requests:
+    cpu: 10m
+    memory: 16Mi
+  limits:
+    cpu: 100m
+    memory: 64Mi
+
+podAnnotations: {}
+podLabels: {}
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: [ALL]
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

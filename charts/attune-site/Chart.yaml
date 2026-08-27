@@ -1,0 +1,9 @@
+apiVersion: v2
+name: attune-site
+description: Public website for Attune
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+home: https://attunedev.org
+sources:
+  - https://github.com/attune-system/attune-site

@@ -1,0 +1,5 @@
+The site is available through the configured Ingress hosts.
+
+The Deployment reads SMTP connection data from Secret
+{{ include "attune-site.smtpSecretName" . }}. The Secret must contain `host` and
+`from`. It may contain `username` and `password` when the server requires them.
