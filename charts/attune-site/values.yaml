@@ -2,7 +2,7 @@ replicaCount: 1
 
 image:
   repository: ghcr.io/attune-system/attune-site
-  tag: 0.1.0
+  tag: 0.1.1
   pullPolicy: IfNotPresent
 imagePullSecrets: []
 

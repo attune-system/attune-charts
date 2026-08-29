@@ -6,8 +6,8 @@ sites.
 | Chart | Version | Purpose |
 | --- | --- | --- |
 | `attune` | `0.4.1` | Attune services, workers, PostgreSQL, and RabbitMQ |
-| `attune-site` | `0.1.1` | `attunedev.org` and its inquiry form |
-| `attune-docs-site` | `0.1.2` | `docs.attunedev.org` |
+| `attune-site` | `0.1.2` | `attunedev.org` and its inquiry form |
+| `attune-docs-site` | `0.1.3` | `docs.attunedev.org` |
 
 ## Add the repository
 
