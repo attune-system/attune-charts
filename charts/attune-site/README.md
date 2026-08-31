@@ -23,7 +23,7 @@ helm upgrade --install attune-site attune/attune-site \
 ```
 
 The chart defaults to the public
-`ghcr.io/attune-system/attune-site:0.1.1` image. Set `image.repository`,
+`ghcr.io/attune-system/attune-site:0.1.2` image. Set `image.repository`,
 `image.tag`, and `imagePullSecrets` to use a private image instead.
 
 ## Configure TLS
