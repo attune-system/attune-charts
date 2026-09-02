@@ -4,6 +4,7 @@ set -euo pipefail
 root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 render_dir="$(mktemp -d)"
 repository_url="packages"
+attune_version="$(awk -F '"' '/^appVersion:/ { print $2; exit }' "$root_dir/charts/attune/Chart.yaml")"
 trap 'rm -rf "$render_dir"' EXIT
 
 for chart in "$root_dir"/charts/*; do
@@ -72,7 +73,57 @@ done
 helm template verify "$root_dir/charts/attune" \
   --namespace verify \
   --is-upgrade \
-  --set global.imageTag=0.4.0 > "$render_dir/attune-upgrade.yaml"
+  --set global.imageTag="$attune_version" \
+  --set security.existingSecret=attune-service-secrets \
+  --set database.postgresql.admin.existingSecret=attune-postgresql-admin \
+  --set database.postgresql.admin.usernameKey=username \
+  --set database.postgresql.admin.passwordKey=password \
+  --set database.postgresql.provisioning.enabled=true \
+  --set rabbitmq.admin.existingSecret=attune-rabbitmq-admin \
+  --set rabbitmq.admin.usernameKey=username \
+  --set rabbitmq.admin.passwordKey=password \
+  --set rabbitmq.provisioning.enabled=true \
+  > "$render_dir/attune-upgrade.yaml"
+
+helm template verify "$root_dir/charts/attune" \
+  --namespace verify \
+  --set security.existingSecret=attune-service-secrets \
+  --set database.postgresql.admin.existingSecret=attune-postgresql-admin \
+  --set database.postgresql.admin.usernameKey=username \
+  --set database.postgresql.admin.passwordKey=password \
+  --set database.postgresql.provisioning.enabled=true \
+  --set rabbitmq.admin.existingSecret=attune-rabbitmq-admin \
+  --set rabbitmq.admin.usernameKey=username \
+  --set rabbitmq.admin.passwordKey=password \
+  --set rabbitmq.provisioning.enabled=true \
+  > "$render_dir/attune-existing-secrets.yaml"
+
+external_secret_count="$({
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc '[select(.kind == "Secret")] | length' - \
+    < "$render_dir/attune-existing-secrets.yaml"
+})"
+
+if [[ "$external_secret_count" -ne 0 ]]; then
+  printf 'expected no rendered Secrets when all existing Secrets are configured\n' >&2
+  exit 1
+fi
+
+if helm template verify "$root_dir/charts/attune" \
+  --namespace verify \
+  --set database.postgresql.provisioning.enabled=true \
+  > /dev/null 2>&1; then
+  printf 'PostgreSQL provisioning rendered without required existing Secrets\n' >&2
+  exit 1
+fi
+
+if helm template verify "$root_dir/charts/attune" \
+  --namespace verify \
+  --set rabbitmq.provisioning.enabled=true \
+  > /dev/null 2>&1; then
+  printf 'RabbitMQ provisioning rendered without required existing Secrets\n' >&2
+  exit 1
+fi
 
 mapfile -t job_hooks < <(
   docker run --rm -i mikefarah/yq:4.47.2 \
@@ -80,8 +131,8 @@ mapfile -t job_hooks < <(
     < "$render_dir/attune-upgrade.yaml"
 )
 
-if [[ "${#job_hooks[@]}" -ne 3 ]]; then
-  printf 'expected three upgrade Jobs, found %d\n' "${#job_hooks[@]}" >&2
+if [[ "${#job_hooks[@]}" -ne 5 ]]; then
+  printf 'expected five upgrade Jobs, found %d\n' "${#job_hooks[@]}" >&2
   exit 1
 fi
 

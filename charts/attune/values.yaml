@@ -4,7 +4,7 @@ fullnameOverride: ""
 global:
   imageRegistry: ghcr.io
   imageNamespace: attune-system
-  imageTag: "0.4.0"
+  imageTag: "0.5.1"
   imagePullSecrets: []
 
 security:
@@ -14,6 +14,7 @@ security:
 
 database:
   schema: attune
+  # Restricted account used by Attune services and migrations.
   username: attune
   password: attune
   database: attune
@@ -22,6 +23,15 @@ database:
   url: ""
   postgresql:
     enabled: true
+    admin:
+      # Set an existing administrator Secret before enabling provisioning.
+      # Without one, the bundled database keeps the legacy shared account.
+      existingSecret: ""
+      usernameKey: DB_USER
+      passwordKey: DB_PASSWORD
+    provisioning:
+      enabled: false
+      activeDeadlineSeconds: 600
     image:
       repository: timescale/timescaledb
       tag: 2.17.2-pg16
@@ -33,6 +43,7 @@ database:
     resources: {}
 
 rabbitmq:
+  # Restricted account used by Attune services.
   username: attune
   password: attune
   host: ""
@@ -40,6 +51,19 @@ rabbitmq:
   url: ""
   managementPort: 15672
   enabled: true
+  admin:
+    # Set an existing administrator Secret before enabling provisioning.
+    # Without one, bundled RabbitMQ keeps the legacy shared account.
+    existingSecret: ""
+    usernameKey: RABBITMQ_USER
+    passwordKey: RABBITMQ_PASSWORD
+  provisioning:
+    enabled: false
+    activeDeadlineSeconds: 600
+    image:
+      repository: python
+      tag: 3.12-alpine
+      pullPolicy: IfNotPresent
   image:
     repository: rabbitmq
     tag: 3.13-management-alpine
@@ -181,8 +205,9 @@ web:
     port: 80
   config:
     environment: kubernetes
-    apiUrl: http://localhost:8080
-    wsUrl: ws://localhost:8081
+    # Empty URLs use same-origin /api, /auth, and /ws routes through nginx.
+    apiUrl: ""
+    wsUrl: ""
   resources: {}
   ingress:
     enabled: false

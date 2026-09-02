@@ -21,6 +21,8 @@ spec:
       labels:
         {{- include "attune.selectorLabels" $ | nindent 8 }}
         app.kubernetes.io/component: {{ $component }}
+      annotations:
+        attune.dev/release-revision: {{ $.Release.Revision | quote }}
     spec:
       {{- if $.Values.global.imagePullSecrets }}
       imagePullSecrets:
@@ -84,15 +86,11 @@ spec:
           volumeMounts:
             - name: packs
               mountPath: /opt/attune/packs
-        - name: wait-for-rabbitmq
-          image: busybox:1.36
-          command: ["/bin/sh", "-ec"]
-          args:
-            - |
-              until nc -z {{ include "attune.rabbitmqServiceName" $ }} {{ $.Values.rabbitmq.port }}; do
-                echo "waiting for rabbitmq";
-                sleep 2;
-              done
+        {{- if and $.Values.rabbitmq.enabled $.Values.rabbitmq.provisioning.enabled }}
+        {{- include "attune.waitForRabbitmqCredentials" $ | nindent 8 }}
+        {{- else }}
+        {{- include "attune.waitForRabbitmqPort" $ | nindent 8 }}
+        {{- end }}
       containers:
         - name: worker
           image: {{ .image | quote }}
@@ -178,6 +176,8 @@ spec:
       labels:
         {{- include "attune.selectorLabels" $ | nindent 8 }}
         app.kubernetes.io/component: {{ $component }}
+      annotations:
+        attune.dev/release-revision: {{ $.Release.Revision | quote }}
     spec:
       {{- if $.Values.global.imagePullSecrets }}
       imagePullSecrets:
@@ -237,15 +237,11 @@ spec:
           volumeMounts:
             - name: packs
               mountPath: /opt/attune/packs
-        - name: wait-for-rabbitmq
-          image: busybox:1.36
-          command: ["/bin/sh", "-ec"]
-          args:
-            - |
-              until nc -z {{ include "attune.rabbitmqServiceName" $ }} {{ $.Values.rabbitmq.port }}; do
-                echo "waiting for rabbitmq";
-                sleep 2;
-              done
+        {{- if and $.Values.rabbitmq.enabled $.Values.rabbitmq.provisioning.enabled }}
+        {{- include "attune.waitForRabbitmqCredentials" $ | nindent 8 }}
+        {{- else }}
+        {{- include "attune.waitForRabbitmqPort" $ | nindent 8 }}
+        {{- end }}
       containers:
         - name: sensor
           image: {{ .image | quote }}
@@ -267,8 +263,6 @@ spec:
               value: {{ .notifierWsUrl | default (printf "ws://%s:%v/ws" (include "attune.notifierServiceName" $) $.Values.notifier.service.port) | quote }} # nosemgrep: javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket -- Chart default is an explicit in-cluster plaintext endpoint.
             - name: ATTUNE__SENSOR__ALLOW_INSECURE_NOTIFIER_WS
               value: {{ .allowInsecureNotifierWs | default false | quote }}
-            - name: ATTUNE_MQ_URL
-              value: {{ include "attune.rabbitmqUrl" $ | quote }}
             - name: ATTUNE_PACKS_BASE_DIR
               value: /opt/attune/packs
             - name: RUST_LOG

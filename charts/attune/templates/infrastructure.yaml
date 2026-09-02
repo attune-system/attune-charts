@@ -36,9 +36,15 @@ spec:
           imagePullPolicy: IfNotPresent
           env:
             - name: POSTGRES_USER
-              value: {{ .Values.database.username | quote }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "attune.postgresqlAdminSecretName" . }}
+                  key: {{ .Values.database.postgresql.admin.usernameKey }}
             - name: POSTGRES_PASSWORD
-              value: {{ .Values.database.password | quote }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "attune.postgresqlAdminSecretName" . }}
+                  key: {{ .Values.database.postgresql.admin.passwordKey }}
             - name: POSTGRES_DB
               value: {{ .Values.database.database | quote }}
             - name: PGDATA
@@ -48,12 +54,12 @@ spec:
               containerPort: 5432
           livenessProbe:
             exec:
-              command: ["pg_isready", "-U", "{{ .Values.database.username }}"]
+              command: ["/bin/sh", "-ec", "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""]
             initialDelaySeconds: 20
             periodSeconds: 10
           readinessProbe:
             exec:
-              command: ["pg_isready", "-U", "{{ .Values.database.username }}"]
+              command: ["/bin/sh", "-ec", "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""]
             initialDelaySeconds: 10
             periodSeconds: 10
           resources:
@@ -116,9 +122,15 @@ spec:
           imagePullPolicy: IfNotPresent
           env:
             - name: RABBITMQ_DEFAULT_USER
-              value: {{ .Values.rabbitmq.username | quote }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "attune.rabbitmqAdminSecretName" . }}
+                  key: {{ .Values.rabbitmq.admin.usernameKey }}
             - name: RABBITMQ_DEFAULT_PASS
-              value: {{ .Values.rabbitmq.password | quote }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "attune.rabbitmqAdminSecretName" . }}
+                  key: {{ .Values.rabbitmq.admin.passwordKey }}
             - name: RABBITMQ_DEFAULT_VHOST
               value: /
           ports:

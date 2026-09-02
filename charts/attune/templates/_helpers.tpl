@@ -56,6 +56,22 @@ app.kubernetes.io/component: {{ .component }}
 {{- end -}}
 {{- end -}}
 
+{{- define "attune.postgresqlAdminSecretName" -}}
+{{- if .Values.database.postgresql.admin.existingSecret -}}
+{{- .Values.database.postgresql.admin.existingSecret -}}
+{{- else -}}
+{{- include "attune.secretName" . -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "attune.rabbitmqAdminSecretName" -}}
+{{- if .Values.rabbitmq.admin.existingSecret -}}
+{{- .Values.rabbitmq.admin.existingSecret -}}
+{{- else -}}
+{{- include "attune.secretName" . -}}
+{{- end -}}
+{{- end -}}
+
 {{- define "attune.postgresqlServiceName" -}}
 {{- if .Values.database.host -}}
 {{- .Values.database.host -}}
@@ -102,4 +118,61 @@ app.kubernetes.io/component: {{ .component }}
 
 {{- define "attune.mcpServiceName" -}}
 {{- printf "%s-mcp" (include "attune.fullname" .) -}}
+{{- end -}}
+
+{{- define "attune.waitForDatabaseCredentials" -}}
+- name: wait-for-database-credentials
+  image: postgres:16-alpine
+  command: ["/bin/sh", "-ec"]
+  args:
+    - |
+      until PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -tAc 'SELECT 1' >/dev/null 2>&1; do
+        echo "waiting for provisioned PostgreSQL service account"
+        sleep 2
+      done
+  envFrom:
+    - secretRef:
+        name: {{ include "attune.secretName" . }}
+{{- end -}}
+
+{{- define "attune.waitForRabbitmqCredentials" -}}
+- name: wait-for-rabbitmq-credentials
+  image: "{{ .Values.rabbitmq.provisioning.image.repository }}:{{ .Values.rabbitmq.provisioning.image.tag }}"
+  imagePullPolicy: {{ .Values.rabbitmq.provisioning.image.pullPolicy }}
+  command: ["python3", "-c"]
+  args:
+    - |
+      import base64
+      import os
+      import time
+      import urllib.error
+      import urllib.request
+
+      url = "http://{{ include "attune.rabbitmqServiceName" . }}:{{ .Values.rabbitmq.managementPort }}/api/whoami"
+      while True:
+          token = base64.b64encode(
+              f"{os.environ['RABBITMQ_USER']}:{os.environ['RABBITMQ_PASSWORD']}".encode()
+          ).decode()
+          request = urllib.request.Request(url, headers={"Authorization": f"Basic {token}"})
+          try:
+              with urllib.request.urlopen(request, timeout=10):
+                  break
+          except (OSError, urllib.error.HTTPError):
+              print("waiting for provisioned RabbitMQ service account", flush=True)
+              time.sleep(2)
+  envFrom:
+    - secretRef:
+        name: {{ include "attune.secretName" . }}
+{{- end -}}
+
+{{- define "attune.waitForRabbitmqPort" -}}
+- name: wait-for-rabbitmq
+  image: busybox:1.36
+  command: ["/bin/sh", "-ec"]
+  args:
+    - |
+      until nc -z {{ include "attune.rabbitmqServiceName" . }} {{ .Values.rabbitmq.port }}; do
+        echo "waiting for RabbitMQ"
+        sleep 2
+      done
 {{- end -}}

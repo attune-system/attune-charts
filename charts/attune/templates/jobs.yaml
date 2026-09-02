@@ -23,6 +23,8 @@ spec:
       imagePullSecrets:
         {{- toYaml .Values.global.imagePullSecrets | nindent 8 }}
       {{- end }}
+      initContainers:
+        {{- include "attune.waitForDatabaseCredentials" . | nindent 8 }}
       containers:
         - name: migrations
           image: {{ include "attune.image" (dict "root" . "image" .Values.images.migrations) }}

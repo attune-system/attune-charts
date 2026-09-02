@@ -5,7 +5,7 @@ sites.
 
 | Chart | Version | Purpose |
 | --- | --- | --- |
-| `attune` | `0.4.1` | Attune services, workers, PostgreSQL, and RabbitMQ |
+| `attune` | `0.5.1` | Attune services, workers, PostgreSQL, and RabbitMQ |
 | `attune-site` | `0.1.4` | `attunedev.org` and its inquiry form |
 | `attune-docs-site` | `0.1.3` | `docs.attunedev.org` |
 
@@ -47,12 +47,11 @@ helm upgrade --install attune attune/attune \
   --wait-for-jobs
 ```
 
-The platform chart pulls Attune `0.4.0` images from
+The platform chart pulls Attune `0.5.1` images from
 `ghcr.io/attune-system/attune`. Its default credentials are for a development
 cluster. Override the values under `security`, `database`, `rabbitmq`, and
-`bootstrap.testUser.login` before a production installation. Attune `0.4.0`
-uses the development bootstrap password `TestPass123!`; change it after the
-first login.
+`bootstrap.testUser.login` before a production installation. The development
+bootstrap password is `TestPass123!`; change it after the first login.
 
 The site charts pull public, versioned images from `ghcr.io/attune-system`.
 
@@ -72,6 +71,16 @@ Run the package script after you change a chart version or chart source:
 
 The script writes chart archives to `packages/` and regenerates `index.yaml`.
 Commit the chart source, package archive, and index in the same change.
+
+The `Update Attune release` workflow checks the latest stable Attune GitHub
+release each day and opens a pull request when the platform chart is behind.
+It pins the release version instead of using the mutable `latest` image tag.
+Run the same update locally with:
+
+```bash
+./scripts/update-attune-release.py 0.5.1
+./scripts/package.sh
+```
 
 Run all chart checks with:
 
