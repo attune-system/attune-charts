@@ -5,7 +5,7 @@ sites.
 
 | Chart | Version | Purpose |
 | --- | --- | --- |
-| `attune` | `0.5.1` | Attune services, workers, PostgreSQL, and RabbitMQ |
+| `attune` | `0.5.2` | Attune services, workers, PostgreSQL, and RabbitMQ |
 | `attune-site` | `0.1.4` | `attunedev.org` and its inquiry form |
 | `attune-docs-site` | `0.1.3` | `docs.attunedev.org` |
 
@@ -47,7 +47,7 @@ helm upgrade --install attune attune/attune \
   --wait-for-jobs
 ```
 
-The platform chart pulls Attune `0.5.1` images from
+The platform chart pulls Attune `0.5.2` images from
 `ghcr.io/attune-system/attune`. Its default credentials are for a development
 cluster. Override the values under `security`, `database`, `rabbitmq`, and
 `bootstrap.testUser.login` before a production installation. The development
