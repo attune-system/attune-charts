@@ -2,7 +2,7 @@ replicaCount: 1
 
 image:
   repository: ghcr.io/attune-system/attune-site
-  tag: 0.1.3
+  tag: 0.1.4
   pullPolicy: IfNotPresent
 imagePullSecrets: []
 
@@ -11,6 +11,15 @@ fullnameOverride: ""
 
 siteOrigin: https://attunedev.org
 trustProxyHeaders: true
+
+persistence:
+  enabled: true
+  existingClaim: ""
+  storageClassName: ""
+  accessModes:
+    - ReadWriteOnce
+  size: 1Gi
+  mountPath: /data
 
 smtp:
   existingSecret: attune-site-smtp
@@ -51,6 +60,8 @@ podSecurityContext:
   runAsNonRoot: true
   runAsUser: 10001
   runAsGroup: 10001
+  fsGroup: 10001
+  fsGroupChangePolicy: OnRootMismatch
 containerSecurityContext:
   allowPrivilegeEscalation: false
   capabilities:

@@ -1,3 +1,9 @@
+{{- if ne (int .Values.replicaCount) 1 }}
+{{- fail "attune-site requires replicaCount=1 because SQLite supports one pod writer" }}
+{{- end }}
+{{- if not .Values.persistence.enabled }}
+{{- fail "attune-site requires persistence.enabled=true for campaign data" }}
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -6,6 +12,8 @@ metadata:
     {{- include "attune-site.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.replicaCount }}
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       {{- include "attune-site.selectorLabels" . | nindent 6 }}
@@ -38,6 +46,8 @@ spec:
               value: {{ .Values.siteOrigin | quote }}
             - name: TRUST_PROXY_HEADERS
               value: {{ .Values.trustProxyHeaders | quote }}
+            - name: CAMPAIGN_DB_PATH
+              value: {{ printf "%s/campaigns.db" .Values.persistence.mountPath | quote }}
             - name: SMTP_HOST
               valueFrom:
                 secretKeyRef:
@@ -80,6 +90,13 @@ spec:
               port: http
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: campaign-data
+              mountPath: {{ .Values.persistence.mountPath | quote }}
+      volumes:
+        - name: campaign-data
+          persistentVolumeClaim:
+            claimName: {{ default (printf "%s-campaign-data" (include "attune-site.fullname" .)) .Values.persistence.existingClaim }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
