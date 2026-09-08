@@ -7,6 +7,451 @@ repository_url="packages"
 attune_version="$(awk -F '"' '/^appVersion:/ { print $2; exit }' "$root_dir/charts/attune/Chart.yaml")"
 trap 'rm -rf "$render_dir"' EXIT
 
+setup_generator=(
+  env
+  ATTUNE_SETUP_DATABASE_PASSWORD=database-password-123456
+  ATTUNE_SETUP_DATABASE_ADMIN_PASSWORD=database-admin-password-123456
+  ATTUNE_SETUP_RABBITMQ_PASSWORD=rabbitmq-password-123456
+  ATTUNE_SETUP_RABBITMQ_ADMIN_PASSWORD=rabbitmq-admin-password-123456
+  ATTUNE_SETUP_JWT_SECRET=jwt-secret-with-at-least-32-characters
+  ATTUNE_SETUP_ENCRYPTION_KEY=encryption-key-with-at-least-32-characters
+  "$root_dir/scripts/generate-attune-setup.sh"
+)
+
+"${setup_generator[@]}" \
+    --namespace verify \
+    --release verify \
+    --cluster-name verify-timescaledb \
+    --storage-class verify-storage \
+    --ingress-host attune.example.com \
+    --ingress-class traefik.io \
+    --ingress-tls-secret attune.example.com-tls \
+    --confirm-bootstrap-password-changed \
+    --output-dir "$render_dir/setup" >/dev/null
+
+docker run --rm -i ghcr.io/yannh/kubeconform:v0.7.0 \
+  -strict -summary < "$render_dir/setup/namespace.yaml"
+docker run --rm -i ghcr.io/yannh/kubeconform:v0.7.0 \
+  -strict -summary < "$render_dir/setup/secrets.yaml"
+docker run --rm -i ghcr.io/yannh/kubeconform:v0.7.0 \
+  -strict -summary \
+  -schema-location default \
+  -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
+  < "$render_dir/setup/timescaledb.yaml"
+
+database_password="$({
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc 'select(.metadata.name == "verify-timescaledb-bootstrap") | .data.password | @base64d' - \
+    < "$render_dir/setup/secrets.yaml"
+})"
+runtime_database_password="$({
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc 'select(.metadata.name == "verify-runtime") | .data.DB_PASSWORD | @base64d' - \
+    < "$render_dir/setup/secrets.yaml"
+})"
+if [[ "$database_password" != "$runtime_database_password" ]]; then
+  printf 'generated CNPG and Attune database credentials differ\n' >&2
+  exit 1
+fi
+
+runtime_database_host="$({
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc 'select(.metadata.name == "verify-runtime") | .data.DB_HOST | @base64d' - \
+    < "$render_dir/setup/secrets.yaml"
+})"
+values_database_host="$({
+  docker run --rm -i mikefarah/yq:4.47.2 '.database.host' - \
+    < "$render_dir/setup/values.yaml"
+})"
+if [[ "$runtime_database_host" != "$values_database_host" ]]; then
+  printf 'generated CNPG host differs between values and runtime Secret\n' >&2
+  exit 1
+fi
+
+helm template verify "$root_dir/charts/attune" \
+  --namespace verify \
+  --values "$render_dir/setup/values.yaml" > "$render_dir/attune-cnpg.yaml"
+
+docker run --rm -i ghcr.io/yannh/kubeconform:v0.7.0 \
+  -strict -summary < "$render_dir/attune-cnpg.yaml"
+
+if grep -Eq 'kind: (Secret|StatefulSet).*postgresql|name: verify-attune-postgresql' \
+  "$render_dir/attune-cnpg.yaml"; then
+  printf 'external CNPG configuration rendered bundled PostgreSQL resources\n' >&2
+  exit 1
+fi
+
+if ! grep -q 'name: verify-attune-provision-rabbitmq-' "$render_dir/attune-cnpg.yaml"; then
+  printf 'generated setup did not render RabbitMQ provisioning\n' >&2
+  exit 1
+fi
+
+if ! grep -q 'image: docker.io/timescale/timescaledb-ha:pg16.15-ts2.29.2@sha256:903669a95321e439a181e2b350d6242a0af2e0ed2629196489780d1e58c46816' \
+  "$render_dir/setup/timescaledb.yaml"; then
+  printf 'generated setup does not pin the expected TimescaleDB image\n' >&2
+  exit 1
+fi
+
+cp -a "$render_dir/setup" "$render_dir/setup-bundled"
+"${setup_generator[@]}" \
+    --database-mode bundled \
+    --namespace verify \
+    --release verify \
+    --output-dir "$render_dir/setup-bundled" \
+    --force >/dev/null
+
+if [[ -e "$render_dir/setup-bundled/timescaledb.yaml" ]]; then
+  printf 'bundled mode retained a stale CNPG manifest\n' >&2
+  exit 1
+fi
+
+bundled_runtime_database_password="$({
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc 'select(.metadata.name == "verify-runtime") | .data.DB_PASSWORD | @base64d' - \
+    < "$render_dir/setup-bundled/secrets.yaml"
+})"
+if [[ "$bundled_runtime_database_password" != "$database_password" ]]; then
+  printf 'mode transition changed the database service password\n' >&2
+  exit 1
+fi
+cnpg_encryption_key="$({
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc 'select(.metadata.name == "verify-runtime") | .data."ATTUNE__SECURITY__ENCRYPTION_KEY"' - \
+    < "$render_dir/setup/secrets.yaml"
+})"
+bundled_encryption_key="$({
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc 'select(.metadata.name == "verify-runtime") | .data."ATTUNE__SECURITY__ENCRYPTION_KEY"' - \
+    < "$render_dir/setup-bundled/secrets.yaml"
+})"
+if [[ "$cnpg_encryption_key" != "$bundled_encryption_key" ]]; then
+  printf 'mode transition changed Attune encryption key\n' >&2
+  exit 1
+fi
+
+helm template verify "$root_dir/charts/attune" \
+  --namespace verify \
+  --values "$render_dir/setup-bundled/values.yaml" > "$render_dir/attune-bundled.yaml"
+
+docker run --rm -i ghcr.io/yannh/kubeconform:v0.7.0 \
+  -strict -summary < "$render_dir/setup-bundled/secrets.yaml"
+docker run --rm -i ghcr.io/yannh/kubeconform:v0.7.0 \
+  -strict -summary < "$render_dir/attune-bundled.yaml"
+
+for bundled_resource in \
+  verify-attune-postgresql \
+  verify-attune-rabbitmq \
+  verify-attune-provision-postgresql- \
+  verify-attune-provision-rabbitmq-; do
+  if ! grep -q "name: ${bundled_resource}" "$render_dir/attune-bundled.yaml"; then
+    printf 'bundled setup did not render %s\n' "$bundled_resource" >&2
+    exit 1
+  fi
+done
+
+ATTUNE_SETUP_DATABASE_PASSWORD='external@database:password' \
+ATTUNE_SETUP_RABBITMQ_PASSWORD='external@rabbitmq:password' \
+ATTUNE_SETUP_JWT_SECRET=jwt-secret-with-at-least-32-characters \
+ATTUNE_SETUP_ENCRYPTION_KEY=encryption-key-with-at-least-32-characters \
+  "$root_dir/scripts/generate-attune-setup.sh" \
+    --database-mode external \
+    --database-host db.example.com \
+    --database-user 'attune@app' \
+    --database-sslmode require \
+    --rabbitmq-mode external \
+    --rabbitmq-host mq.example.com \
+    --rabbitmq-user 'attune:agent' \
+    --rabbitmq-port 5671 \
+    --rabbitmq-scheme amqps \
+    --rabbitmq-vhost /attune-prod \
+    --namespace verify \
+    --release verify \
+    --output-dir "$render_dir/setup-external" >/dev/null
+
+helm template verify "$root_dir/charts/attune" \
+  --namespace verify \
+  --values "$render_dir/setup-external/values.yaml" > "$render_dir/attune-external.yaml"
+
+docker run --rm -i ghcr.io/yannh/kubeconform:v0.7.0 \
+  -strict -summary < "$render_dir/setup-external/secrets.yaml"
+docker run --rm -i ghcr.io/yannh/kubeconform:v0.7.0 \
+  -strict -summary < "$render_dir/attune-external.yaml"
+
+if grep -Eq 'name: verify-attune-(postgresql|rabbitmq|provision-postgresql-|provision-rabbitmq-)' \
+  "$render_dir/attune-external.yaml"; then
+  printf 'external setup rendered bundled data services or provisioners\n' >&2
+  exit 1
+fi
+
+external_database_url="$({
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc 'select(.metadata.name == "verify-runtime") | .data."ATTUNE__DATABASE__URL" | @base64d' - \
+    < "$render_dir/setup-external/secrets.yaml"
+})"
+if [[ "$external_database_url" != 'postgresql://attune%40app:external%40database%3Apassword@db.example.com:5432/attune?sslmode=require' ]]; then
+  printf 'external setup has the wrong database URL\n' >&2
+  exit 1
+fi
+external_rabbitmq_url="$({
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc 'select(.metadata.name == "verify-runtime") | .data."ATTUNE__MESSAGE_QUEUE__URL" | @base64d' - \
+    < "$render_dir/setup-external/secrets.yaml"
+})"
+if [[ "$external_rabbitmq_url" != 'amqps://attune%3Aagent:external%40rabbitmq%3Apassword@mq.example.com:5671/%2Fattune-prod' ]]; then
+  printf 'external setup has the wrong RabbitMQ URL\n' >&2
+  exit 1
+fi
+
+bundled_database_size="$({
+  docker run --rm -i mikefarah/yq:4.47.2 '.database.postgresql.persistence.size' - \
+    < "$render_dir/setup-bundled/values.yaml"
+})"
+if [[ "$bundled_database_size" != 20Gi ]]; then
+  printf 'bundled setup did not pass database size to the chart\n' >&2
+  exit 1
+fi
+
+if ! grep -q 'secretName: "attune.example.com-tls"' "$render_dir/setup/values.yaml"; then
+  printf 'generated ingress did not reference its required TLS Secret\n' >&2
+  exit 1
+fi
+if ! grep -qx 'secrets.yaml' "$render_dir/setup/.gitignore"; then
+  printf 'generated output does not protect secrets.yaml from Git\n' >&2
+  exit 1
+fi
+if ! grep -qx 'credentials.state' "$render_dir/setup/.gitignore"; then
+  printf 'generated output does not protect credentials.state from Git\n' >&2
+  exit 1
+fi
+if ! grep -qx '.credentials.state.\*' "$render_dir/setup/.gitignore"; then
+  printf 'generated output does not protect temporary credential state from Git\n' >&2
+  exit 1
+fi
+
+ATTUNE_SETUP_DATABASE_PASSWORD='  short' \
+ATTUNE_SETUP_RABBITMQ_PASSWORD=short \
+  "$root_dir/scripts/generate-attune-setup.sh" \
+    --database-mode external \
+    --database-host db.example.com \
+    --rabbitmq-mode external \
+    --rabbitmq-host mq.example.com \
+    --output-dir "$render_dir/setup-round-trip" >/dev/null
+
+round_trip_password="$({
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc 'select(.metadata.name == "attune-runtime") | .data.DB_PASSWORD | @base64d' - \
+    < "$render_dir/setup-round-trip/secrets.yaml"
+})"
+if [[ "$round_trip_password" != '  short' ]]; then
+  printf 'generated Secret did not preserve leading password whitespace\n' >&2
+  exit 1
+fi
+
+"$root_dir/scripts/generate-attune-setup.sh" \
+  --database-mode external \
+  --database-host db.example.com \
+  --rabbitmq-mode external \
+  --rabbitmq-host mq.example.com \
+  --output-dir "$render_dir/setup-round-trip" \
+  --force >/dev/null
+preserved_external_password="$({
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc 'select(.metadata.name == "attune-runtime") | .data.DB_PASSWORD | @base64d' - \
+    < "$render_dir/setup-round-trip/secrets.yaml"
+})"
+if [[ "$preserved_external_password" != '  short' ]]; then
+  printf 'external regeneration did not preserve its saved password\n' >&2
+  exit 1
+fi
+
+for corrupt_state in empty truncated empty-value malformed duplicate; do
+  corrupt_dir="$render_dir/setup-state-$corrupt_state"
+  cp -a "$render_dir/setup-round-trip" "$corrupt_dir"
+  case "$corrupt_state" in
+    empty)
+      : > "$corrupt_dir/credentials.state"
+      ;;
+    truncated)
+      printf 'DATABASE_MODE\texternal\n' > "$corrupt_dir/credentials.state"
+      ;;
+    empty-value)
+      empty_value_tmp="$corrupt_dir/credentials.state.tmp"
+      while IFS=$'\t' read -r state_key state_value; do
+        if [[ "$state_key" == DATABASE_PASSWORD_B64 ]]; then
+          state_value=""
+        fi
+        printf '%s\t%s\n' "$state_key" "$state_value"
+      done < "$corrupt_dir/credentials.state" > "$empty_value_tmp"
+      mv "$empty_value_tmp" "$corrupt_dir/credentials.state"
+      ;;
+    malformed)
+      malformed_tmp="$corrupt_dir/credentials.state.tmp"
+      while IFS=$'\t' read -r state_key state_value; do
+        if [[ "$state_key" == JWT_SECRET_B64 ]]; then
+          state_value='%%%'
+        fi
+        printf '%s\t%s\n' "$state_key" "$state_value"
+      done < "$corrupt_dir/credentials.state" > "$malformed_tmp"
+      mv "$malformed_tmp" "$corrupt_dir/credentials.state"
+      ;;
+    duplicate)
+      printf 'DATABASE_MODE\texternal\n' >> "$corrupt_dir/credentials.state"
+      ;;
+  esac
+  corrupt_checksum="$(sha256sum "$corrupt_dir/credentials.state")"
+  if "$root_dir/scripts/generate-attune-setup.sh" \
+    --database-mode external \
+    --database-host db.example.com \
+    --rabbitmq-mode external \
+    --rabbitmq-host mq.example.com \
+    --output-dir "$corrupt_dir" \
+    --force >/dev/null 2>&1; then
+    printf 'setup generator accepted %s credential state\n' "$corrupt_state" >&2
+    exit 1
+  fi
+  if [[ "$(sha256sum "$corrupt_dir/credentials.state")" != "$corrupt_checksum" ]]; then
+    printf 'failed regeneration modified %s credential state\n' "$corrupt_state" >&2
+    exit 1
+  fi
+done
+
+cp -a "$render_dir/setup" "$render_dir/setup-rotate"
+old_encryption_key="$({
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc 'select(.metadata.name == "verify-runtime") | .data."ATTUNE__SECURITY__ENCRYPTION_KEY"' - \
+    < "$render_dir/setup-rotate/secrets.yaml"
+})"
+"$root_dir/scripts/generate-attune-setup.sh" \
+  --output-dir "$render_dir/setup-rotate" \
+  --rotate-secrets >/dev/null
+new_encryption_key="$({
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc 'select(.metadata.name == "attune-runtime") | .data."ATTUNE__SECURITY__ENCRYPTION_KEY"' - \
+    < "$render_dir/setup-rotate/secrets.yaml"
+})"
+if [[ -z "$new_encryption_key" || "$old_encryption_key" == "$new_encryption_key" ]]; then
+  printf 'explicit secret rotation did not replace generated credentials\n' >&2
+  exit 1
+fi
+
+: > "$render_dir/attune-mode-matrix.yaml"
+for mode_pair in \
+  'cnpg bundled' \
+  'cnpg external' \
+  'bundled bundled' \
+  'bundled external' \
+  'external bundled' \
+  'external external'; do
+  read -r database_mode rabbitmq_mode <<< "$mode_pair"
+  mode_name="${database_mode}-${rabbitmq_mode}"
+  mode_args=(
+    --database-mode "$database_mode"
+    --rabbitmq-mode "$rabbitmq_mode"
+    --namespace verify
+    --release verify
+    --output-dir "$render_dir/setup-$mode_name"
+  )
+  if [[ "$database_mode" == external ]]; then
+    mode_args+=(--database-host db.example.com)
+  fi
+  if [[ "$rabbitmq_mode" == external ]]; then
+    mode_args+=(--rabbitmq-host mq.example.com)
+  fi
+
+  "${setup_generator[@]}" "${mode_args[@]}" >/dev/null
+
+  helm template verify "$root_dir/charts/attune" \
+    --namespace verify \
+    --values "$render_dir/setup-$mode_name/values.yaml" > "$render_dir/attune-$mode_name.yaml"
+  printf '%s\n' '---' >> "$render_dir/attune-mode-matrix.yaml"
+  cat "$render_dir/attune-$mode_name.yaml" >> "$render_dir/attune-mode-matrix.yaml"
+
+  postgresql_rendered=false
+  rabbitmq_rendered=false
+  grep -q 'name: verify-attune-postgresql' "$render_dir/attune-$mode_name.yaml" && postgresql_rendered=true
+  grep -q 'name: verify-attune-rabbitmq' "$render_dir/attune-$mode_name.yaml" && rabbitmq_rendered=true
+  if [[ "$postgresql_rendered" != "$([[ "$database_mode" == bundled ]] && printf true || printf false)" ]]; then
+    printf 'database mode %s rendered the wrong PostgreSQL resources\n' "$database_mode" >&2
+    exit 1
+  fi
+  if [[ "$rabbitmq_rendered" != "$([[ "$rabbitmq_mode" == bundled ]] && printf true || printf false)" ]]; then
+    printf 'RabbitMQ mode %s rendered the wrong resources\n' "$rabbitmq_mode" >&2
+    exit 1
+  fi
+  if [[ "$rabbitmq_mode" == external ]] &&
+    [[ "$({
+      docker run --rm -i mikefarah/yq:4.47.2 \
+        eval-all --no-doc 'select(.metadata.name == "verify-runtime") | .data."ATTUNE__MESSAGE_QUEUE__URL" | @base64d' - \
+        < "$render_dir/setup-$mode_name/secrets.yaml"
+    })" != 'amqps://attune:rabbitmq-password-123456@mq.example.com:5671/%2F' ]]; then
+      printf 'external RabbitMQ mode did not default to AMQPS port 5671\n' >&2
+      exit 1
+  fi
+done
+
+docker run --rm -i ghcr.io/yannh/kubeconform:v0.7.0 \
+  -strict -summary < "$render_dir/attune-mode-matrix.yaml"
+
+if "$root_dir/scripts/generate-attune-setup.sh" \
+  --ingress-host exposed.example.com \
+  --ingress-tls-secret exposed-example-com-tls \
+  --output-dir "$render_dir/setup-known-password" >/dev/null 2>&1; then
+  printf 'setup generator exposed the known bootstrap password without explicit consent\n' >&2
+  exit 1
+fi
+
+if ATTUNE_SETUP_DATABASE_PASSWORD=external-password \
+  "$root_dir/scripts/generate-attune-setup.sh" \
+    --database-mode external \
+    --database-host 'db..example.com' \
+    --output-dir "$render_dir/setup-invalid-external-host" >/dev/null 2>&1; then
+  printf 'setup generator accepted an invalid external hostname\n' >&2
+  exit 1
+fi
+
+if ATTUNE_SETUP_DATABASE_PASSWORD=external-password \
+  "$root_dir/scripts/generate-attune-setup.sh" \
+    --database-mode external \
+    --database-host db.example.com \
+    --database-sslmode verify-full \
+    --output-dir "$render_dir/setup-unsupported-ca" >/dev/null 2>&1; then
+  printf 'setup generator accepted unsupported PostgreSQL CA verification\n' >&2
+  exit 1
+fi
+
+quoted_output_dir="$render_dir/setup path;literal"
+quoted_output="$({
+  "${setup_generator[@]}" --output-dir "$quoted_output_dir"
+})"
+printf -v expected_quoted_values_path '%q' "$quoted_output_dir/values.yaml"
+if [[ "$quoted_output" != *"--values $expected_quoted_values_path"* ]]; then
+  printf 'setup generator printed an unsafe output path\n' >&2
+  exit 1
+fi
+
+if "$root_dir/scripts/generate-attune-setup.sh" \
+  --ingress-host 'Invalid..example.com' \
+  --ingress-tls-secret invalid-host-tls \
+  --confirm-bootstrap-password-changed \
+  --output-dir "$render_dir/setup-invalid-host" >/dev/null 2>&1; then
+  printf 'setup generator accepted an invalid Kubernetes ingress hostname\n' >&2
+  exit 1
+fi
+
+if "$root_dir/scripts/generate-attune-setup.sh" \
+  --database-user postgres \
+  --output-dir "$render_dir/setup-cnpg-postgres" >/dev/null 2>&1; then
+  printf 'setup generator accepted the CNPG postgres administrator as its application user\n' >&2
+  exit 1
+fi
+
+if "$root_dir/scripts/generate-attune-setup.sh" \
+  --release aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
+  --output-dir "$render_dir/setup-long-release" >/dev/null 2>&1; then
+  printf 'setup generator accepted a release name that produces oversized resources\n' >&2
+  exit 1
+fi
+
 for chart in "$root_dir"/charts/*; do
   chart_name="$(basename "$chart")"
   chart_args=()

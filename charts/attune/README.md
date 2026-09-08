@@ -4,7 +4,7 @@ This chart installs the Attune platform, including these components:
 
 - API, executor, notifier, supervisor, and web Deployments
 - Action-worker and sensor-worker pools
-- TimescaleDB and RabbitMQ StatefulSets
+- Optional bundled TimescaleDB and RabbitMQ StatefulSets
 - Migration, bootstrap-user, and pack-initialization Jobs
 - Shared claims for packs, runtime environments, and artifacts
 
@@ -28,14 +28,11 @@ web:
     apiUrl: ""
     wsUrl: ""
   ingress:
-    enabled: true
-    className: traefik
-    hosts:
-      - host: attune.example.com
-        paths:
-          - path: /
-            pathType: Prefix
+    enabled: false
 ```
+
+Attune `0.5.3` starts with the known bootstrap password `TestPass123!`. Keep
+ingress disabled for the first login.
 
 When upgrading from chart `0.5.4` or older, copy the chart-managed
 `<release>-attune-secrets` Secret to a separately named Secret before the
@@ -63,6 +60,34 @@ helm upgrade --install attune attune/attune \
   --wait-for-jobs
 ```
 
+Forward the web Service locally, sign in at `http://127.0.0.1:8080`, and change
+the bootstrap password:
+
+```bash
+kubectl --namespace attune port-forward service/attune-attune-web 8080:80
+```
+
+Then enable ingress in `values.yaml`, configure `hosts` and `tls`, and run the
+Helm upgrade command again. The TLS Secret must exist in the release namespace
+before the upgrade. Do not expose Attune before changing the bootstrap
+password.
+
+```yaml
+web:
+  ingress:
+    enabled: true
+    className: traefik
+    hosts:
+      - host: attune.example.com
+        paths:
+          - path: /
+            pathType: Prefix
+    tls:
+      - secretName: attune-example-com-tls
+        hosts:
+          - attune.example.com
+```
+
 Fresh installations run initialization Jobs as normal release resources, so
 application init containers and Helm can wait for them together. Upgrades run
 the credential provisioners and initialization Jobs as ordered `pre-upgrade`
@@ -72,9 +97,10 @@ The PostgreSQL provisioner creates a restricted login, transfers ownership of
 the Attune database and schema to it, and pre-creates extensions that require
 administrator privileges. The RabbitMQ provisioner creates a user without
 administrator tags and grants it access to the `/` vhost. Both provisioners
-update passwords and permissions when they run again.
+reconcile ownership and permissions when they run again. They set a service
+password only when they create the account.
 
-Attune `0.4.0` creates the bootstrap identity with the development password
+Attune `0.5.3` creates the bootstrap identity with the development password
 `TestPass123!`. Change that password after the first login. The current
 `init-user` image does not honor a custom `bootstrap.testUser.password` value.
 
@@ -131,14 +157,104 @@ It can contain
 Secret for public OIDC clients and Active Directory direct bind. The chart
 writes non-secret identity settings to the mounted ConfigMap.
 
+## Choose data backends
+
+The database and RabbitMQ choices are independent. Use any combination from
+these tables.
+
+| Database mode | Chart settings | Prerequisite |
+| --- | --- | --- |
+| CloudNativePG | `database.postgresql.enabled: false` and `database.host: <cluster>-rw` | A ready CNPG `Cluster` with the required extensions |
+| Bundled | `database.postgresql.enabled: true` and `database.postgresql.provisioning.enabled: true` | A PostgreSQL administrator Secret |
+| External | `database.postgresql.enabled: false` and an external `database.host` | A provisioned database, role, schema, and extensions |
+
+| RabbitMQ mode | Chart settings | Prerequisite |
+| --- | --- | --- |
+| Bundled | `rabbitmq.enabled: true` and `rabbitmq.provisioning.enabled: true` | A RabbitMQ administrator Secret |
+| External | `rabbitmq.enabled: false` and an external `rabbitmq.host` | A provisioned user with access to the selected vhost |
+
+Attune requires PostgreSQL 16 or later with TimescaleDB 2.17 or later. RabbitMQ
+must be version 3.12 or later.
+
+The repository includes `scripts/generate-attune-setup.sh`. Clone the chart
+repository before running it. The script generates `values.yaml`, Kubernetes
+Secrets, and an optional CloudNativePG manifest:
+
+```bash
+# CloudNativePG TimescaleDB and bundled RabbitMQ
+./scripts/generate-attune-setup.sh
+
+# Standalone TimescaleDB/PostgreSQL and bundled RabbitMQ
+./scripts/generate-attune-setup.sh --database-mode bundled
+```
+
+CloudNativePG mode uses three instances by default. It pins
+`timescale/timescaledb-ha:pg16.15-ts2.29.2` through an `ImageCatalog`, loads
+TimescaleDB, and creates the `timescaledb`, `pgcrypto`, and `uuid-ossp`
+extensions. Install the CloudNativePG operator before applying the generated
+`timescaledb.yaml`.
+
+The generator places the CloudNativePG `Cluster`, `ImageCatalog`, and bootstrap
+Secret in the Attune release namespace. Its generated `<cluster>-rw` hostname
+works in that layout. To separate the database manually, place all three CNPG
+resources in the database namespace. Keep the runtime Secret in the Attune
+release namespace, and set `database.host`, `DB_HOST`, and the host in
+`ATTUNE__DATABASE__URL` to `<cluster>-rw.<database-namespace>.svc`. Keep
+`DB_USER`, `DB_PASSWORD`, `DB_NAME`, and `DB_SCHEMA` consistent with the CNPG
+bootstrap configuration.
+
+For external services, provide existing passwords through the environment:
+
+```bash
+ATTUNE_SETUP_DATABASE_PASSWORD='database-password' \
+ATTUNE_SETUP_RABBITMQ_PASSWORD='rabbitmq-password' \
+  ./scripts/generate-attune-setup.sh \
+    --database-mode external \
+    --database-host db.example.com \
+    --rabbitmq-mode external \
+    --rabbitmq-host mq.example.com \
+    --rabbitmq-vhost /attune
+```
+
+Run `./scripts/generate-attune-setup.sh --help` for all options. The generator
+stores credentials in an ignored `credentials.state` file. `--force` preserves
+those credentials while regenerating manifests. Use `--rotate-secrets` only for
+a coordinated credential rotation. The state file does not store generator
+options. Repeat every original option on a `--force` run. For example:
+
+```bash
+./scripts/generate-attune-setup.sh \
+  --database-mode bundled \
+  --namespace production \
+  --release attune-prod \
+  --storage-class longhorn \
+  --output-dir production-setup \
+  --force
+```
+
+For generated ingress values, change the bootstrap password through a local
+port-forward first. Then rerun the generator with the original options plus
+`--ingress-host`, `--ingress-tls-secret`,
+`--confirm-bootstrap-password-changed`, and `--force`.
+
 ## Use pre-created Kubernetes Secrets
 
-Create these Secrets in the release namespace before installing the chart:
+Create the Secrets required by the selected backend modes before installing the
+chart:
 
-- A PostgreSQL administrator Secret with `username` and `password` keys.
-- A RabbitMQ administrator Secret with `username` and `password` keys.
-- An Attune runtime Secret containing the application environment variables.
-- An optional identity Secret for OIDC and Active Directory credentials.
+- An Attune runtime Secret in the release namespace containing the application
+  environment variables.
+- An optional identity Secret in the release namespace for OIDC and Active
+  Directory credentials.
+- For bundled PostgreSQL, an administrator Secret in the release namespace
+  with `username` and `password` keys.
+- For bundled RabbitMQ, an administrator Secret in the release namespace with
+  `username` and `password` keys.
+- For CloudNativePG, a `kubernetes.io/basic-auth` bootstrap Secret matching
+  `bootstrap.initdb.owner` in the same namespace as the CNPG `Cluster`.
+
+External PostgreSQL and RabbitMQ modes do not use administrator Secrets in this
+chart.
 
 The provisioners currently support the PostgreSQL and RabbitMQ StatefulSets
 bundled with this chart. Provision accounts in external services before
@@ -195,6 +311,16 @@ RUNTIME_ENVS_DIR
 ARTIFACTS_DIR
 LOADER_SCRIPT
 ```
+
+For PostgreSQL TLS, add `PGSSLMODE` to the runtime Secret and use the same
+`sslmode` in `ATTUNE__DATABASE__URL`. The generator supports `disable`, `allow`,
+`prefer`, and `require`. Mode `require` encrypts traffic but does not verify the
+server certificate. The chart cannot mount the CA file that libpq needs for
+`verify-ca` or `verify-full`, so those modes are not currently supported.
+
+For RabbitMQ TLS, use an `amqps://` URL in both message-queue keys. Encode the
+vhost as the URL path. For example, vhost `/attune` becomes `/%2Fattune`. The
+RabbitMQ CA must also exist in each consuming container's trust store.
 
 Set `security.existingSecret` to the runtime Secret name. The chart never copies
 these values into the Helm release. When the bundled PostgreSQL or RabbitMQ
@@ -264,6 +390,15 @@ rabbitmq:
   port: 5671
   enabled: false
 ```
+
+Set both `database.postgresql.provisioning.enabled` and
+`rabbitmq.provisioning.enabled` to `false` for external services. The chart does
+not create users, schemas, extensions, or vhosts in external systems. The
+database user must own the selected database and have an owner-writable schema.
+Install `timescaledb`, `pgcrypto`, and `uuid-ossp` before installing Attune. The
+RabbitMQ user needs configure, write, and read access to its vhost. External
+services must meet the minimum versions listed under
+[Choose data backends](#choose-data-backends).
 
 ## Configure TLS
 

@@ -5,7 +5,7 @@ sites.
 
 | Chart | Version | Purpose |
 | --- | --- | --- |
-| `attune` | `0.6.0` | Attune services, workers, PostgreSQL, and RabbitMQ |
+| `attune` | `0.6.1` | Attune services, workers, PostgreSQL, and RabbitMQ |
 | `attune-site` | `0.1.5` | `attunedev.org` and its inquiry form |
 | `attune-docs-site` | `0.1.3` | `docs.attunedev.org` |
 
@@ -37,21 +37,142 @@ https://github.com/attune-system/attune-charts.git
 
 ## Install a chart
 
+Generate the Helm values and Kubernetes manifests locally. The database and
+RabbitMQ modes are independent, so either service can be bundled or externally
+managed.
+
+Clone this repository to use the generator:
+
+```bash
+git clone https://github.com/attune-system/attune-charts.git
+cd attune-charts
+```
+
+CloudNativePG with bundled RabbitMQ is the default:
+
+```bash
+./scripts/generate-attune-setup.sh \
+  --storage-class longhorn \
+  --database-size 100Gi
+```
+
+This mode creates `attune-setup/namespace.yaml`, `secrets.yaml`,
+`timescaledb.yaml`, and `values.yaml`. It uses
+`timescale/timescaledb-ha:pg16.15-ts2.29.2` through a CloudNativePG
+`ImageCatalog`, pinned to its multi-architecture digest. Run the printed
+commands in order. Install the CloudNativePG operator before applying the
+generated `timescaledb.yaml`.
+
+The default database has three instances. Set `--instances 1` only for a
+single-node or development cluster. The generator does not configure database
+backups, so add a tested CloudNativePG backup policy before using it in
+production. Never commit the generated `secrets.yaml` file.
+
+Attune `0.5.3` uses the known initial password `TestPass123!`. Install without
+ingress, then use a local port-forward for the first login:
+
+```bash
+kubectl --namespace attune port-forward service/attune-attune-web 8080:80
+```
+
+Open `http://127.0.0.1:8080`, sign in, and change the password. Then repeat the
+original generator options while adding ingress:
+
+```bash
+./scripts/generate-attune-setup.sh \
+  --storage-class longhorn \
+  --database-size 100Gi \
+  --ingress-host attune.example.com \
+  --ingress-tls-secret attune-example-com-tls \
+  --confirm-bootstrap-password-changed \
+  --force
+```
+
+Apply the printed commands again. The generator refuses to enable ingress
+without the password-change confirmation and an existing TLS Secret name.
+
+For a lighter installation without the CloudNativePG operator, use the chart's
+standalone TimescaleDB/PostgreSQL container:
+
+```bash
+./scripts/generate-attune-setup.sh --database-mode bundled
+```
+
+Bundled mode creates separate administrator and application credentials,
+enables the chart's account provisioner, and does not create
+`timescaledb.yaml`.
+
+For independently managed TimescaleDB and RabbitMQ, provide their existing
+service passwords through the environment:
+
+```bash
+ATTUNE_SETUP_DATABASE_PASSWORD='replace-with-database-password' \
+ATTUNE_SETUP_RABBITMQ_PASSWORD='replace-with-rabbitmq-password' \
+  ./scripts/generate-attune-setup.sh \
+    --database-mode external \
+    --database-host db.example.com \
+    --database-sslmode require \
+    --rabbitmq-mode external \
+    --rabbitmq-host mq.example.com \
+    --rabbitmq-port 5671 \
+    --rabbitmq-scheme amqps \
+    --rabbitmq-vhost /attune
+```
+
+The external database user must own the selected database and have an
+owner-writable schema. Install the `timescaledb`, `pgcrypto`, and `uuid-ossp`
+extensions before installing Attune. The external RabbitMQ user needs
+configure, write, and read access to the selected vhost. The generator disables both
+bundled StatefulSets and their account-provisioning Jobs in this mode.
+
+External services must run PostgreSQL 16 or later, TimescaleDB 2.17 or later,
+and RabbitMQ 3.12 or later.
+
+External PostgreSQL defaults to `sslmode=require`. External RabbitMQ defaults
+to AMQPS on port `5671`. Pass `--database-sslmode`, `--rabbitmq-scheme`, and
+`--rabbitmq-port` when the external services use different transport settings.
+The generator supports PostgreSQL `sslmode` values through `require`, which
+encrypts the connection but does not verify the server certificate. It rejects
+`verify-ca` and `verify-full` because the chart cannot mount a PostgreSQL CA
+file yet. For RabbitMQ with a private certificate authority, install the CA in
+every Attune service image. The chart does not mount a private RabbitMQ CA.
+
+Run `./scripts/generate-attune-setup.sh --help` for all database, RabbitMQ,
+storage, ingress, and naming options.
+
+Changing a generator mode only replaces local generated files. It does not
+delete or migrate an already deployed CNPG Cluster, PostgreSQL StatefulSet, or
+RabbitMQ StatefulSet. Move data and remove the old Kubernetes resources as a
+separate operation.
+
+The generator stores its generated credentials in the ignored
+`attune-setup/credentials.state` file. On later runs, `--force` reads that file
+and preserves every credential while regenerating the manifests. Keep both
+`credentials.state` and `secrets.yaml` private. Use `--rotate-secrets` only when
+you intend to rotate every generated credential. The state file stores
+credentials, not generator options. Repeat the original namespace, release,
+backend, host, storage, and ingress options on every `--force` run.
+
+Persistent PostgreSQL and RabbitMQ instances do not adopt a new administrator
+password from an updated Kubernetes Secret. Coordinate those password changes
+with each service before applying rotated Secrets. Changing
+`ATTUNE__SECURITY__ENCRYPTION_KEY` also makes previously encrypted Attune keys
+unreadable.
+
 Install the Attune platform:
 
 ```bash
 helm upgrade --install attune attune/attune \
   --namespace attune \
-  --create-namespace \
-  --set security.existingSecret=attune-runtime \
+  --values attune-setup/values.yaml \
   --wait \
   --wait-for-jobs
 ```
 
 The platform chart pulls Attune `0.5.3` images from
-`ghcr.io/attune-system/attune`. Create the required `attune-runtime`
-Kubernetes Secret before installation. The chart does not accept credentials
-through Helm values.
+`ghcr.io/attune-system/attune`. Apply the generated namespace, Secret, and
+optional CloudNativePG manifests before installation. The chart does not accept
+credentials through Helm values.
 
 The site charts pull public, versioned images from `ghcr.io/attune-system`.
 
