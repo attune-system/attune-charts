@@ -82,6 +82,59 @@ Attune `0.4.0` creates the bootstrap identity with the development password
 `TestPass123!`. Change that password after the first login. The current
 `init-user` image does not honor a custom `bootstrap.testUser.password` value.
 
+## Configure OIDC and Active Directory
+
+Rancher exposes both identity providers in the generated chart form under
+`security`. OIDC uses browser redirects with PKCE. Active Directory uses
+Attune's LDAP login support and accepts either direct-bind or search-and-bind
+configuration.
+
+Configure OIDC with the public callback URL registered at your provider:
+
+```yaml
+security:
+  oidc:
+    enabled: true
+    discoveryUrl: https://sso.example.com/.well-known/openid-configuration
+    clientId: attune
+    clientSecret: REPLACE_WITH_OIDC_CLIENT_SECRET
+    providerName: sso
+    providerLabel: Company SSO
+    redirectUri: https://attune.example.com/auth/callback
+    postLogoutRedirectUri: https://attune.example.com/login
+    scopes:
+      - groups
+```
+
+For Active Directory search-and-bind, use a read-only directory account:
+
+```yaml
+security:
+  activeDirectory:
+    enabled: true
+    url: ldaps://ad.example.com:636
+    userSearchBase: "ou=users,dc=example,dc=com"
+    userFilter: "(sAMAccountName={login})"
+    searchBindDn: "cn=attune-readonly,ou=service-accounts,dc=example,dc=com"
+    searchBindPassword: REPLACE_WITH_DIRECTORY_PASSWORD
+    providerName: ad
+    providerLabel: Active Directory
+```
+
+For direct bind, set `activeDirectory.bindDnTemplate` and leave
+`userSearchBase`, `searchBindDn`, and `searchBindPassword` empty. Use
+`startTls: true` with an `ldap://` URL only when the directory requires
+STARTTLS. Keep `dangerSkipTlsVerify` disabled outside local testing.
+
+The chart stores identity credentials in a separate Secret that only the API
+Deployment imports. To supply that Secret through an external secret manager,
+set `security.identitySecret.existingSecret`. The external Secret can contain
+`ATTUNE__SECURITY__OIDC__CLIENT_SECRET`,
+`ATTUNE__SECURITY__LDAP__SEARCH_BIND_PASSWORD`, or both. When an existing
+identity Secret is selected, `clientSecret` and `searchBindPassword` are
+ignored. The chart writes the remaining identity settings to the mounted
+ConfigMap.
+
 ## Use pre-created Kubernetes Secrets
 
 For production, create three Secrets in the release namespace before installing

@@ -1,3 +1,21 @@
+{{- if and .Values.security.oidc.enabled (empty .Values.security.oidc.discoveryUrl) }}
+{{- fail "security.oidc.discoveryUrl is required when OIDC is enabled" }}
+{{- end }}
+{{- if and .Values.security.oidc.enabled (empty .Values.security.oidc.clientId) }}
+{{- fail "security.oidc.clientId is required when OIDC is enabled" }}
+{{- end }}
+{{- if and .Values.security.oidc.enabled (empty .Values.security.oidc.redirectUri) }}
+{{- fail "security.oidc.redirectUri is required when OIDC is enabled" }}
+{{- end }}
+{{- if and .Values.security.activeDirectory.enabled (empty .Values.security.activeDirectory.url) }}
+{{- fail "security.activeDirectory.url is required when Active Directory is enabled" }}
+{{- end }}
+{{- if and .Values.security.activeDirectory.enabled (empty .Values.security.activeDirectory.bindDnTemplate) (empty .Values.security.activeDirectory.userSearchBase) }}
+{{- fail "security.activeDirectory.userSearchBase is required for search-and-bind authentication" }}
+{{- end }}
+{{- if and (not .Values.security.identitySecret.existingSecret) (ne (empty .Values.security.activeDirectory.searchBindDn) (empty .Values.security.activeDirectory.searchBindPassword)) }}
+{{- fail "security.activeDirectory.searchBindDn and searchBindPassword must both be set or both be empty" }}
+{{- end }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -6,6 +24,61 @@ metadata:
     {{- include "attune.labels" . | nindent 4 }}
 data:
   config.yaml: |
+    security:
+      login_page:
+        show_local_login: {{ .Values.security.loginPage.showLocalLogin }}
+        show_oidc_login: {{ .Values.security.loginPage.showOidcLogin }}
+        show_ldap_login: {{ .Values.security.loginPage.showActiveDirectoryLogin }}
+      oidc:
+        enabled: {{ .Values.security.oidc.enabled }}
+        {{- with .Values.security.oidc.discoveryUrl }}
+        discovery_url: {{ . | quote }}
+        {{- end }}
+        {{- with .Values.security.oidc.clientId }}
+        client_id: {{ . | quote }}
+        {{- end }}
+        provider_name: {{ .Values.security.oidc.providerName | quote }}
+        {{- with .Values.security.oidc.providerLabel }}
+        provider_label: {{ . | quote }}
+        {{- end }}
+        {{- with .Values.security.oidc.providerIconUrl }}
+        provider_icon_url: {{ . | quote }}
+        {{- end }}
+        {{- with .Values.security.oidc.redirectUri }}
+        redirect_uri: {{ . | quote }}
+        {{- end }}
+        {{- with .Values.security.oidc.postLogoutRedirectUri }}
+        post_logout_redirect_uri: {{ . | quote }}
+        {{- end }}
+        scopes: {{ .Values.security.oidc.scopes | toJson }}
+      ldap:
+        enabled: {{ .Values.security.activeDirectory.enabled }}
+        {{- with .Values.security.activeDirectory.url }}
+        url: {{ . | quote }}
+        {{- end }}
+        {{- with .Values.security.activeDirectory.bindDnTemplate }}
+        bind_dn_template: {{ . | quote }}
+        {{- end }}
+        {{- with .Values.security.activeDirectory.userSearchBase }}
+        user_search_base: {{ . | quote }}
+        {{- end }}
+        user_filter: {{ .Values.security.activeDirectory.userFilter | quote }}
+        {{- with .Values.security.activeDirectory.searchBindDn }}
+        search_bind_dn: {{ . | quote }}
+        {{- end }}
+        login_attr: {{ .Values.security.activeDirectory.loginAttr | quote }}
+        email_attr: {{ .Values.security.activeDirectory.emailAttr | quote }}
+        display_name_attr: {{ .Values.security.activeDirectory.displayNameAttr | quote }}
+        group_attr: {{ .Values.security.activeDirectory.groupAttr | quote }}
+        starttls: {{ .Values.security.activeDirectory.startTls }}
+        danger_skip_tls_verify: {{ .Values.security.activeDirectory.dangerSkipTlsVerify }}
+        provider_name: {{ .Values.security.activeDirectory.providerName | quote }}
+        {{- with .Values.security.activeDirectory.providerLabel }}
+        provider_label: {{ . | quote }}
+        {{- end }}
+        {{- with .Values.security.activeDirectory.providerIconUrl }}
+        provider_icon_url: {{ . | quote }}
+        {{- end }}
     pack_registry:
       enabled: true
       allow_unverified_direct_remote_installs: {{ .Values.packRegistry.allowUnverifiedDirectRemoteInstalls }}

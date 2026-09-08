@@ -56,6 +56,14 @@ app.kubernetes.io/component: {{ .component }}
 {{- end -}}
 {{- end -}}
 
+{{- define "attune.identitySecretName" -}}
+{{- if .Values.security.identitySecret.existingSecret -}}
+{{- .Values.security.identitySecret.existingSecret -}}
+{{- else -}}
+{{- printf "%s-identity" (include "attune.fullname" .) -}}
+{{- end -}}
+{{- end -}}
+
 {{- define "attune.postgresqlAdminSecretName" -}}
 {{- if .Values.database.postgresql.admin.existingSecret -}}
 {{- .Values.database.postgresql.admin.existingSecret -}}

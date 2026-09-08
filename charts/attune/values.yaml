@@ -11,6 +11,47 @@ security:
   existingSecret: ""
   jwtSecret: change-me-in-production
   encryptionKey: change-me-in-production-32-bytes-minimum
+  identitySecret:
+    # Existing Secret keys must use Attune's full environment variable names.
+    existingSecret: ""
+  loginPage:
+    showLocalLogin: true
+    showOidcLogin: true
+    showActiveDirectoryLogin: true
+  oidc:
+    enabled: false
+    discoveryUrl: ""
+    clientId: ""
+    # Optional for public clients that use PKCE without a client secret.
+    clientSecret: ""
+    providerName: oidc
+    providerLabel: SSO
+    providerIconUrl: ""
+    redirectUri: ""
+    postLogoutRedirectUri: ""
+    # Additional scopes beyond openid, email, and profile.
+    scopes: []
+  activeDirectory:
+    # Attune connects to Active Directory through its LDAP interface.
+    enabled: false
+    url: ""
+    # Set this for direct bind. Use {login} for the submitted username.
+    bindDnTemplate: ""
+    # Leave bindDnTemplate empty to use search and bind.
+    userSearchBase: ""
+    userFilter: "(sAMAccountName={login})"
+    searchBindDn: ""
+    searchBindPassword: ""
+    loginAttr: sAMAccountName
+    emailAttr: mail
+    displayNameAttr: displayName
+    groupAttr: memberOf
+    startTls: false
+    # Disables certificate verification. Do not enable in production.
+    dangerSkipTlsVerify: false
+    providerName: ad
+    providerLabel: Active Directory
+    providerIconUrl: ""
 
 database:
   schema: attune

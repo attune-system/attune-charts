@@ -72,6 +72,10 @@ spec:
           envFrom:
             - secretRef:
                 name: {{ include "attune.secretName" . }}
+            {{- if or .Values.security.identitySecret.existingSecret .Values.security.oidc.clientSecret .Values.security.activeDirectory.searchBindPassword }}
+            - secretRef:
+                name: {{ include "attune.identitySecretName" . }}
+            {{- end }}
           env:
             - name: ATTUNE_CONFIG
               value: /opt/attune/config.yaml
