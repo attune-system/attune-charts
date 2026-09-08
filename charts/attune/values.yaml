@@ -8,11 +8,10 @@ global:
   imagePullSecrets: []
 
 security:
+  # Required. The Secret must contain the runtime keys listed in the chart README.
   existingSecret: ""
-  jwtSecret: change-me-in-production
-  encryptionKey: change-me-in-production-32-bytes-minimum
   identitySecret:
-    # Existing Secret keys must use Attune's full environment variable names.
+    # Optional API-only Secret for OIDC and Active Directory credentials.
     existingSecret: ""
   loginPage:
     showLocalLogin: true
@@ -22,8 +21,6 @@ security:
     enabled: false
     discoveryUrl: ""
     clientId: ""
-    # Optional for public clients that use PKCE without a client secret.
-    clientSecret: ""
     providerName: oidc
     providerLabel: SSO
     providerIconUrl: ""
@@ -41,7 +38,6 @@ security:
     userSearchBase: ""
     userFilter: "(sAMAccountName={login})"
     searchBindDn: ""
-    searchBindPassword: ""
     loginAttr: sAMAccountName
     emailAttr: mail
     displayNameAttr: displayName
@@ -55,13 +51,9 @@ security:
 
 database:
   schema: attune
-  # Restricted account used by Attune services and migrations.
-  username: attune
-  password: attune
   database: attune
   host: ""
   port: 5432
-  url: ""
   postgresql:
     enabled: true
     admin:
@@ -84,12 +76,8 @@ database:
     resources: {}
 
 rabbitmq:
-  # Restricted account used by Attune services.
-  username: attune
-  password: attune
   host: ""
   port: 5672
-  url: ""
   managementPort: 15672
   enabled: true
   admin:
@@ -114,13 +102,6 @@ rabbitmq:
     size: 8Gi
     storageClassName: ""
   resources: {}
-
-bootstrap:
-  testUser:
-    login: test@attune.local
-    displayName: Test User
-    # Attune 0.4.0 only supports this bootstrap password. Change it after login.
-    password: TestPass123!
 
 packRegistry:
   # Override with another immutable 40-character commit SHA when promoting a
@@ -235,8 +216,10 @@ mcp:
     port: 8090
   auth:
     useBootstrapTestUser: true
-    login: ""
-    password: ""
+    # Required when useBootstrapTestUser is false.
+    existingSecret: ""
+    loginKey: ATTUNE_LOGIN
+    passwordKey: ATTUNE_PASSWORD
   resources: {}
 
 web:
@@ -275,7 +258,7 @@ web:
 #   replicas         (optional) - Number of pod replicas (default: 1)
 #   runtimes         (optional) - List of runtimes to expose; [] = auto-detect
 #   resources        (optional) - Kubernetes resource requests/limits
-#   env              (optional) - Extra environment variables (list of {name, value})
+#   env              (optional) - Kubernetes env entries; use secretKeyRef for secrets
 #   imagePullPolicy  (optional) - Pull policy for the worker image
 #   logLevel         (optional) - RUST_LOG level (default: "info")
 #   runtimeClassName (optional) - Kubernetes RuntimeClass (e.g., "nvidia" for GPU)

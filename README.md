@@ -5,7 +5,7 @@ sites.
 
 | Chart | Version | Purpose |
 | --- | --- | --- |
-| `attune` | `0.5.4` | Attune services, workers, PostgreSQL, and RabbitMQ |
+| `attune` | `0.6.0` | Attune services, workers, PostgreSQL, and RabbitMQ |
 | `attune-site` | `0.1.5` | `attunedev.org` and its inquiry form |
 | `attune-docs-site` | `0.1.3` | `docs.attunedev.org` |
 
@@ -43,15 +43,15 @@ Install the Attune platform:
 helm upgrade --install attune attune/attune \
   --namespace attune \
   --create-namespace \
+  --set security.existingSecret=attune-runtime \
   --wait \
   --wait-for-jobs
 ```
 
 The platform chart pulls Attune `0.5.3` images from
-`ghcr.io/attune-system/attune`. Its default credentials are for a development
-cluster. Override the values under `security`, `database`, `rabbitmq`, and
-`bootstrap.testUser.login` before a production installation. The development
-bootstrap password is `TestPass123!`; change it after the first login.
+`ghcr.io/attune-system/attune`. Create the required `attune-runtime`
+Kubernetes Secret before installation. The chart does not accept credentials
+through Helm values.
 
 The site charts pull public, versioned images from `ghcr.io/attune-system`.
 
@@ -78,7 +78,7 @@ It pins the release version instead of using the mutable `latest` image tag.
 Run the same update locally with:
 
 ```bash
-./scripts/update-attune-release.py 0.5.1
+./scripts/update-attune-release.py 0.5.3
 ./scripts/package.sh
 ```
 

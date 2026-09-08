@@ -49,11 +49,7 @@ app.kubernetes.io/component: {{ .component }}
 {{- end -}}
 
 {{- define "attune.secretName" -}}
-{{- if .Values.security.existingSecret -}}
-{{- .Values.security.existingSecret -}}
-{{- else -}}
-{{- printf "%s-secrets" (include "attune.fullname" .) -}}
-{{- end -}}
+{{- required "security.existingSecret is required; store runtime credentials in a Kubernetes Secret" .Values.security.existingSecret -}}
 {{- end -}}
 
 {{- define "attune.identitySecretName" -}}
@@ -97,22 +93,6 @@ app.kubernetes.io/component: {{ .component }}
 {{- printf "%s-rabbitmq" (include "attune.fullname" .) -}}
 {{- else -}}
 {{- fail "rabbitmq.host is required when rabbitmq.enabled is false" -}}
-{{- end -}}
-{{- end -}}
-
-{{- define "attune.databaseUrl" -}}
-{{- if .Values.database.url -}}
-{{- .Values.database.url -}}
-{{- else -}}
-{{- printf "postgresql://%s:%s@%s:%v/%s" (.Values.database.username | urlquery) (.Values.database.password | urlquery) (include "attune.postgresqlServiceName" .) .Values.database.port (.Values.database.database | urlquery) -}}
-{{- end -}}
-{{- end -}}
-
-{{- define "attune.rabbitmqUrl" -}}
-{{- if .Values.rabbitmq.url -}}
-{{- .Values.rabbitmq.url -}}
-{{- else -}}
-{{- printf "amqp://%s:%s@%s:%v" (.Values.rabbitmq.username | urlquery) (.Values.rabbitmq.password | urlquery) (include "attune.rabbitmqServiceName" .) .Values.rabbitmq.port -}}
 {{- end -}}
 {{- end -}}
 

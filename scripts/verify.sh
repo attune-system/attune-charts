@@ -9,8 +9,12 @@ trap 'rm -rf "$render_dir"' EXIT
 
 for chart in "$root_dir"/charts/*; do
   chart_name="$(basename "$chart")"
-  helm lint --strict "$chart"
-  helm template verify "$chart" --namespace verify > "$render_dir/$chart_name.yaml"
+  chart_args=()
+  if [[ "$chart_name" == attune ]]; then
+    chart_args+=(--set security.existingSecret=verify-attune-secrets)
+  fi
+  helm lint --strict "$chart" "${chart_args[@]}"
+  helm template verify "$chart" --namespace verify "${chart_args[@]}" > "$render_dir/$chart_name.yaml"
   docker run --rm -i ghcr.io/yannh/kubeconform:v0.7.0 \
     -strict -summary < "$render_dir/$chart_name.yaml"
 
@@ -100,17 +104,17 @@ helm template verify "$root_dir/charts/attune" \
 
 helm template verify "$root_dir/charts/attune" \
   --namespace verify \
+  --set security.existingSecret=attune-service-secrets \
+  --set security.identitySecret.existingSecret=attune-identity \
   --set security.oidc.enabled=true \
   --set-string security.oidc.discoveryUrl=https://login.example.com/.well-known/openid-configuration \
   --set-string security.oidc.clientId=attune \
-  --set-string security.oidc.clientSecret=oidc-secret \
   --set-string security.oidc.redirectUri=https://attune.example.com/auth/callback \
   --set-json 'security.oidc.scopes=["groups"]' \
   --set security.activeDirectory.enabled=true \
   --set-string security.activeDirectory.url=ldaps://ad.example.com:636 \
   --set-string 'security.activeDirectory.userSearchBase=ou=users\,dc=example\,dc=com' \
   --set-string 'security.activeDirectory.searchBindDn=cn=attune\,ou=services\,dc=example\,dc=com' \
-  --set-string security.activeDirectory.searchBindPassword=directory-secret \
   > "$render_dir/attune-identity.yaml"
 
 identity_config="$({
@@ -130,26 +134,10 @@ for expected_setting in \
   fi
 done
 
-for secret_key in \
-  ATTUNE__SECURITY__OIDC__CLIENT_SECRET \
-  ATTUNE__SECURITY__LDAP__SEARCH_BIND_PASSWORD; do
-  secret_value="$({
-    docker run --rm -i \
-      -e SECRET_KEY="$secret_key" \
-      mikefarah/yq:4.47.2 \
-      eval-all --no-doc 'select(.kind == "Secret" and .stringData[strenv(SECRET_KEY)] != null) | .stringData[strenv(SECRET_KEY)]' - \
-      < "$render_dir/attune-identity.yaml"
-  })"
-  if [[ -z "$secret_value" || "$secret_value" == null ]]; then
-    printf 'identity Secret is missing %s\n' "$secret_key" >&2
-    exit 1
-  fi
-done
-
 identity_secret_consumers="$({
   docker run --rm -i mikefarah/yq:4.47.2 \
     eval-all --no-doc \
-    '[select(.kind == "Deployment") | .spec.template.spec.containers[] | select(.envFrom[]?.secretRef.name == "verify-attune-identity")] | length' - \
+    '[select(.kind == "Deployment") | .spec.template.spec.containers[] | select(.envFrom[]?.secretRef.name == "attune-identity")] | length' - \
     < "$render_dir/attune-identity.yaml"
 })"
 if [[ "$identity_secret_consumers" -ne 1 ]]; then
@@ -158,6 +146,7 @@ if [[ "$identity_secret_consumers" -ne 1 ]]; then
 fi
 
 if helm template verify "$root_dir/charts/attune" \
+  --set security.existingSecret=attune-service-secrets \
   --set security.oidc.enabled=true \
   > /dev/null 2>&1; then
   printf 'OIDC rendered without its required provider settings\n' >&2
@@ -165,6 +154,7 @@ if helm template verify "$root_dir/charts/attune" \
 fi
 
 if helm template verify "$root_dir/charts/attune" \
+  --set security.existingSecret=attune-service-secrets \
   --set security.activeDirectory.enabled=true \
   --set-string security.activeDirectory.url=ldaps://ad.example.com:636 \
   > /dev/null 2>&1; then
@@ -173,6 +163,7 @@ if helm template verify "$root_dir/charts/attune" \
 fi
 
 if helm template verify "$root_dir/charts/attune" \
+  --set security.existingSecret=attune-service-secrets \
   --set-string security.activeDirectory.searchBindDn=cn=attune \
   > /dev/null 2>&1; then
   printf 'Active Directory rendered with partial search-bind credentials\n' >&2
@@ -192,6 +183,7 @@ fi
 
 if helm template verify "$root_dir/charts/attune" \
   --namespace verify \
+  --set security.existingSecret=attune-service-secrets \
   --set database.postgresql.provisioning.enabled=true \
   > /dev/null 2>&1; then
   printf 'PostgreSQL provisioning rendered without required existing Secrets\n' >&2
@@ -200,9 +192,21 @@ fi
 
 if helm template verify "$root_dir/charts/attune" \
   --namespace verify \
+  --set security.existingSecret=attune-service-secrets \
   --set rabbitmq.provisioning.enabled=true \
   > /dev/null 2>&1; then
   printf 'RabbitMQ provisioning rendered without required existing Secrets\n' >&2
+  exit 1
+fi
+
+if helm template verify "$root_dir/charts/attune" > /dev/null 2>&1; then
+  printf 'Attune rendered without a runtime Kubernetes Secret\n' >&2
+  exit 1
+fi
+
+if grep -Eq '^[[:space:]]+(jwtSecret|encryptionKey|clientSecret|searchBindPassword|password):' \
+  "$root_dir/charts/attune/values.yaml"; then
+  printf 'values.yaml contains a literal secret field\n' >&2
   exit 1
 fi
 

@@ -13,25 +13,15 @@ Deployments use one replica, and shared claims use `ReadWriteOnce`.
 
 ## Install on k3s
 
-For a quick development install, set credentials and the public hostname in a
-values file. This mode retains the legacy shared PostgreSQL and RabbitMQ
-accounts and is not intended for production:
+Create the runtime Secret before installing the chart. Keep this Secret out of
+the Helm values stored by Rancher. The required keys are listed under
+[Use pre-created Kubernetes Secrets](#use-pre-created-kubernetes-secrets).
+
+Set only Secret names and non-secret settings in your values file:
 
 ```yaml
 security:
-  jwtSecret: REPLACE_WITH_A_RANDOM_SECRET
-  encryptionKey: REPLACE_WITH_AT_LEAST_32_RANDOM_BYTES
-
-database:
-  password: REPLACE_WITH_A_DATABASE_PASSWORD
-
-rabbitmq:
-  password: REPLACE_WITH_A_RABBITMQ_PASSWORD
-
-bootstrap:
-  testUser:
-    login: admin@example.com
-    displayName: Attune Administrator
+  existingSecret: attune-runtime
 
 web:
   config:
@@ -46,6 +36,12 @@ web:
           - path: /
             pathType: Prefix
 ```
+
+When upgrading from chart `0.5.4` or older, copy the chart-managed
+`<release>-attune-secrets` Secret to a separately named Secret before the
+upgrade, then set `security.existingSecret` to the new name. Chart `0.6.0` no
+longer renders the old Secret, so Helm removes that managed resource during the
+upgrade.
 
 Keep `apiUrl` and `wsUrl` empty when one public host fronts the chart. The web
 client derives `wss://<current-host>/ws`, and the web nginx forwards `/ws` to
@@ -97,13 +93,14 @@ security:
     enabled: true
     discoveryUrl: https://sso.example.com/.well-known/openid-configuration
     clientId: attune
-    clientSecret: REPLACE_WITH_OIDC_CLIENT_SECRET
     providerName: sso
     providerLabel: Company SSO
     redirectUri: https://attune.example.com/auth/callback
     postLogoutRedirectUri: https://attune.example.com/login
     scopes:
       - groups
+  identitySecret:
+    existingSecret: attune-identity
 ```
 
 For Active Directory search-and-bind, use a read-only directory account:
@@ -116,33 +113,32 @@ security:
     userSearchBase: "ou=users,dc=example,dc=com"
     userFilter: "(sAMAccountName={login})"
     searchBindDn: "cn=attune-readonly,ou=service-accounts,dc=example,dc=com"
-    searchBindPassword: REPLACE_WITH_DIRECTORY_PASSWORD
     providerName: ad
     providerLabel: Active Directory
+  identitySecret:
+    existingSecret: attune-identity
 ```
 
 For direct bind, set `activeDirectory.bindDnTemplate` and leave
-`userSearchBase`, `searchBindDn`, and `searchBindPassword` empty. Use
+`userSearchBase` and `searchBindDn` empty. Use
 `startTls: true` with an `ldap://` URL only when the directory requires
 STARTTLS. Keep `dangerSkipTlsVerify` disabled outside local testing.
 
-The chart stores identity credentials in a separate Secret that only the API
-Deployment imports. To supply that Secret through an external secret manager,
-set `security.identitySecret.existingSecret`. The external Secret can contain
+The API imports the Secret selected by `security.identitySecret.existingSecret`.
+It can contain
 `ATTUNE__SECURITY__OIDC__CLIENT_SECRET`,
-`ATTUNE__SECURITY__LDAP__SEARCH_BIND_PASSWORD`, or both. When an existing
-identity Secret is selected, `clientSecret` and `searchBindPassword` are
-ignored. The chart writes the remaining identity settings to the mounted
-ConfigMap.
+`ATTUNE__SECURITY__LDAP__SEARCH_BIND_PASSWORD`, or both. Omit the identity
+Secret for public OIDC clients and Active Directory direct bind. The chart
+writes non-secret identity settings to the mounted ConfigMap.
 
 ## Use pre-created Kubernetes Secrets
 
-For production, create three Secrets in the release namespace before installing
-the chart:
+Create these Secrets in the release namespace before installing the chart:
 
 - A PostgreSQL administrator Secret with `username` and `password` keys.
 - A RabbitMQ administrator Secret with `username` and `password` keys.
-- An Attune service Secret containing the application environment variables.
+- An Attune runtime Secret containing the application environment variables.
+- An optional identity Secret for OIDC and Active Directory credentials.
 
 The provisioners currently support the PostgreSQL and RabbitMQ StatefulSets
 bundled with this chart. Provision accounts in external services before
@@ -172,7 +168,7 @@ rabbitmq:
     enabled: true
 ```
 
-The service Secret must contain these keys:
+The runtime Secret must contain these keys:
 
 ```text
 ATTUNE__SECURITY__JWT_SECRET
@@ -199,6 +195,15 @@ RUNTIME_ENVS_DIR
 ARTIFACTS_DIR
 LOADER_SCRIPT
 ```
+
+Set `security.existingSecret` to the runtime Secret name. The chart never copies
+these values into the Helm release. When the bundled PostgreSQL or RabbitMQ
+instance uses a different administrator account, set its `admin.existingSecret`
+and key names separately.
+
+When MCP is enabled with `mcp.auth.useBootstrapTestUser: false`, set
+`mcp.auth.existingSecret` to a Secret containing the keys selected by
+`mcp.auth.loginKey` and `mcp.auth.passwordKey`.
 
 `DB_USER` and `RABBITMQ_USER` must differ from their administrator usernames.
 The connection URLs must use the same service credentials. URL-encode passwords
@@ -244,19 +249,17 @@ only when those pods run on the same node.
 
 ## Use external infrastructure
 
-When you disable the bundled database or RabbitMQ, set both the connection URL
-and the host fields. Init containers and bootstrap Jobs use the host fields for
-readiness checks.
+When you disable the bundled database or RabbitMQ, put its connection URL in the
+runtime Secret and set the host field in Helm values. Init containers and
+bootstrap Jobs use the host fields for readiness checks.
 
 ```yaml
 database:
-  url: postgresql://attune:password@postgres.example.com:5432/attune
   host: postgres.example.com
   postgresql:
     enabled: false
 
 rabbitmq:
-  url: amqps://attune:password@rabbitmq.example.com:5671
   host: rabbitmq.example.com
   port: 5671
   enabled: false

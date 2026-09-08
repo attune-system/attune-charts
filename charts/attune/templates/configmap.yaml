@@ -13,8 +13,11 @@
 {{- if and .Values.security.activeDirectory.enabled (empty .Values.security.activeDirectory.bindDnTemplate) (empty .Values.security.activeDirectory.userSearchBase) }}
 {{- fail "security.activeDirectory.userSearchBase is required for search-and-bind authentication" }}
 {{- end }}
-{{- if and (not .Values.security.identitySecret.existingSecret) (ne (empty .Values.security.activeDirectory.searchBindDn) (empty .Values.security.activeDirectory.searchBindPassword)) }}
-{{- fail "security.activeDirectory.searchBindDn and searchBindPassword must both be set or both be empty" }}
+{{- if and .Values.security.activeDirectory.searchBindDn (empty .Values.security.identitySecret.existingSecret) }}
+{{- fail "security.identitySecret.existingSecret is required when Active Directory searchBindDn is set" }}
+{{- end }}
+{{- if and .Values.mcp.enabled (not .Values.mcp.auth.useBootstrapTestUser) (empty .Values.mcp.auth.existingSecret) }}
+{{- fail "mcp.auth.existingSecret is required when MCP does not use the bootstrap identity" }}
 {{- end }}
 apiVersion: v1
 kind: ConfigMap
