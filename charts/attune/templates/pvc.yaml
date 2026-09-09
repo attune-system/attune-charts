@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: {{ include "attune.fullname" . }}-packs
+  name: {{ printf "%s-packs" (include "attune.fullname" .) | quote }}
   labels:
     {{- include "attune.labels" . | nindent 4 }}
 spec:
@@ -9,15 +9,15 @@ spec:
     {{- toYaml .Values.sharedStorage.packs.accessModes | nindent 4 }}
   resources:
     requests:
-      storage: {{ .Values.sharedStorage.packs.size }}
+      storage: {{ .Values.sharedStorage.packs.size | quote }}
   {{- if .Values.sharedStorage.packs.storageClassName }}
-  storageClassName: {{ .Values.sharedStorage.packs.storageClassName }}
+  storageClassName: {{ .Values.sharedStorage.packs.storageClassName | quote }}
   {{- end }}
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: {{ include "attune.fullname" . }}-runtime-envs
+  name: {{ printf "%s-runtime-envs" (include "attune.fullname" .) | quote }}
   labels:
     {{- include "attune.labels" . | nindent 4 }}
 spec:
@@ -25,15 +25,15 @@ spec:
     {{- toYaml .Values.sharedStorage.runtimeEnvs.accessModes | nindent 4 }}
   resources:
     requests:
-      storage: {{ .Values.sharedStorage.runtimeEnvs.size }}
+      storage: {{ .Values.sharedStorage.runtimeEnvs.size | quote }}
   {{- if .Values.sharedStorage.runtimeEnvs.storageClassName }}
-  storageClassName: {{ .Values.sharedStorage.runtimeEnvs.storageClassName }}
+  storageClassName: {{ .Values.sharedStorage.runtimeEnvs.storageClassName | quote }}
   {{- end }}
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: {{ include "attune.fullname" . }}-artifacts
+  name: {{ printf "%s-artifacts" (include "attune.fullname" .) | quote }}
   labels:
     {{- include "attune.labels" . | nindent 4 }}
 spec:
@@ -41,7 +41,7 @@ spec:
     {{- toYaml .Values.sharedStorage.artifacts.accessModes | nindent 4 }}
   resources:
     requests:
-      storage: {{ .Values.sharedStorage.artifacts.size }}
+      storage: {{ .Values.sharedStorage.artifacts.size | quote }}
   {{- if .Values.sharedStorage.artifacts.storageClassName }}
-  storageClassName: {{ .Values.sharedStorage.artifacts.storageClassName }}
+  storageClassName: {{ .Values.sharedStorage.artifacts.storageClassName | quote }}
   {{- end }}

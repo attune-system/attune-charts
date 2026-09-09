@@ -1,11 +1,11 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "attune.apiServiceName" . }}
+  name: {{ include "attune.apiServiceName" . | quote }}
   labels:
     {{- include "attune.labels" . | nindent 4 }}
 spec:
-  type: {{ .Values.api.service.type }}
+  type: {{ .Values.api.service.type | quote }}
   selector:
     {{- include "attune.componentLabels" (dict "root" . "component" "api") | nindent 4 }}
   ports:
@@ -16,7 +16,7 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "attune.apiServiceName" . }}
+  name: {{ include "attune.apiServiceName" . | quote }}
   labels:
     {{- include "attune.labels" . | nindent 4 }}
 spec:
@@ -47,7 +47,7 @@ spec:
               done
           envFrom:
             - secretRef:
-                name: {{ include "attune.secretName" . }}
+                name: {{ include "attune.secretName" . | quote }}
         - name: wait-for-packs
           image: busybox:1.36
           command: ["/bin/sh", "-ec"]
@@ -67,14 +67,14 @@ spec:
         {{- end }}
       containers:
         - name: api
-          image: {{ include "attune.image" (dict "root" . "image" .Values.images.api) }}
-          imagePullPolicy: {{ .Values.images.api.pullPolicy }}
+          image: {{ include "attune.image" (dict "root" . "image" .Values.images.api) | quote }}
+          imagePullPolicy: {{ .Values.images.api.pullPolicy | quote }}
           envFrom:
             - secretRef:
-                name: {{ include "attune.secretName" . }}
+                name: {{ include "attune.secretName" . | quote }}
             {{- if .Values.security.identitySecret.existingSecret }}
             - secretRef:
-                name: {{ include "attune.identitySecretName" . }}
+                name: {{ include "attune.identitySecretName" . | quote }}
             {{- end }}
           env:
             - name: ATTUNE_CONFIG
@@ -113,21 +113,21 @@ spec:
       volumes:
         - name: config
           configMap:
-            name: {{ include "attune.fullname" . }}-config
+            name: {{ printf "%s-config" (include "attune.fullname" .) | quote }}
         - name: packs
           persistentVolumeClaim:
-            claimName: {{ include "attune.fullname" . }}-packs
+            claimName: {{ printf "%s-packs" (include "attune.fullname" .) | quote }}
         - name: runtime-envs
           persistentVolumeClaim:
-            claimName: {{ include "attune.fullname" . }}-runtime-envs
+            claimName: {{ printf "%s-runtime-envs" (include "attune.fullname" .) | quote }}
         - name: artifacts
           persistentVolumeClaim:
-            claimName: {{ include "attune.fullname" . }}-artifacts
+            claimName: {{ printf "%s-artifacts" (include "attune.fullname" .) | quote }}
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "attune.fullname" . }}-executor
+  name: {{ printf "%s-executor" (include "attune.fullname" .) | quote }}
   labels:
     {{- include "attune.labels" . | nindent 4 }}
 spec:
@@ -158,7 +158,7 @@ spec:
               done
           envFrom:
             - secretRef:
-                name: {{ include "attune.secretName" . }}
+                name: {{ include "attune.secretName" . | quote }}
         {{- if and .Values.rabbitmq.enabled .Values.rabbitmq.provisioning.enabled }}
         {{- include "attune.waitForRabbitmqCredentials" . | nindent 8 }}
         {{- end }}
@@ -176,11 +176,11 @@ spec:
               mountPath: /opt/attune/packs
       containers:
         - name: executor
-          image: {{ include "attune.image" (dict "root" . "image" .Values.images.executor) }}
-          imagePullPolicy: {{ .Values.images.executor.pullPolicy }}
+          image: {{ include "attune.image" (dict "root" . "image" .Values.images.executor) | quote }}
+          imagePullPolicy: {{ .Values.images.executor.pullPolicy | quote }}
           envFrom:
             - secretRef:
-                name: {{ include "attune.secretName" . }}
+                name: {{ include "attune.secretName" . | quote }}
           env:
             - name: ATTUNE_CONFIG
               value: /opt/attune/config.yaml
@@ -201,18 +201,18 @@ spec:
       volumes:
         - name: config
           configMap:
-            name: {{ include "attune.fullname" . }}-config
+            name: {{ printf "%s-config" (include "attune.fullname" .) | quote }}
         - name: packs
           persistentVolumeClaim:
-            claimName: {{ include "attune.fullname" . }}-packs
+            claimName: {{ printf "%s-packs" (include "attune.fullname" .) | quote }}
         - name: artifacts
           persistentVolumeClaim:
-            claimName: {{ include "attune.fullname" . }}-artifacts
+            claimName: {{ printf "%s-artifacts" (include "attune.fullname" .) | quote }}
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "attune.fullname" . }}-supervisor
+  name: {{ printf "%s-supervisor" (include "attune.fullname" .) | quote }}
   labels:
     {{- include "attune.labels" . | nindent 4 }}
 spec:
@@ -243,14 +243,14 @@ spec:
               done
           envFrom:
             - secretRef:
-                name: {{ include "attune.secretName" . }}
+                name: {{ include "attune.secretName" . | quote }}
       containers:
         - name: supervisor
-          image: {{ include "attune.image" (dict "root" . "image" .Values.images.supervisor) }}
-          imagePullPolicy: {{ .Values.images.supervisor.pullPolicy }}
+          image: {{ include "attune.image" (dict "root" . "image" .Values.images.supervisor) | quote }}
+          imagePullPolicy: {{ .Values.images.supervisor.pullPolicy | quote }}
           envFrom:
             - secretRef:
-                name: {{ include "attune.secretName" . }}
+                name: {{ include "attune.secretName" . | quote }}
           env:
             - name: ATTUNE_CONFIG
               value: /opt/attune/config.yaml
@@ -267,19 +267,19 @@ spec:
       volumes:
         - name: config
           configMap:
-            name: {{ include "attune.fullname" . }}-config
+            name: {{ printf "%s-config" (include "attune.fullname" .) | quote }}
         - name: artifacts
           persistentVolumeClaim:
-            claimName: {{ include "attune.fullname" . }}-artifacts
+            claimName: {{ printf "%s-artifacts" (include "attune.fullname" .) | quote }}
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "attune.notifierServiceName" . }}
+  name: {{ include "attune.notifierServiceName" . | quote }}
   labels:
     {{- include "attune.labels" . | nindent 4 }}
 spec:
-  type: {{ .Values.notifier.service.type }}
+  type: {{ .Values.notifier.service.type | quote }}
   selector:
     {{- include "attune.componentLabels" (dict "root" . "component" "notifier") | nindent 4 }}
   ports:
@@ -290,7 +290,7 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "attune.notifierServiceName" . }}
+  name: {{ include "attune.notifierServiceName" . | quote }}
   labels:
     {{- include "attune.labels" . | nindent 4 }}
 spec:
@@ -321,14 +321,14 @@ spec:
               done
           envFrom:
             - secretRef:
-                name: {{ include "attune.secretName" . }}
+                name: {{ include "attune.secretName" . | quote }}
       containers:
         - name: notifier
-          image: {{ include "attune.image" (dict "root" . "image" .Values.images.notifier) }}
-          imagePullPolicy: {{ .Values.images.notifier.pullPolicy }}
+          image: {{ include "attune.image" (dict "root" . "image" .Values.images.notifier) | quote }}
+          imagePullPolicy: {{ .Values.images.notifier.pullPolicy | quote }}
           envFrom:
             - secretRef:
-                name: {{ include "attune.secretName" . }}
+                name: {{ include "attune.secretName" . | quote }}
           env:
             - name: ATTUNE_CONFIG
               value: /opt/attune/config.yaml
@@ -360,16 +360,16 @@ spec:
       volumes:
         - name: config
           configMap:
-            name: {{ include "attune.fullname" . }}-config
+            name: {{ printf "%s-config" (include "attune.fullname" .) | quote }}
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "attune.fullname" . }}-web
+  name: {{ printf "%s-web" (include "attune.fullname" .) | quote }}
   labels:
     {{- include "attune.labels" . | nindent 4 }}
 spec:
-  type: {{ .Values.web.service.type }}
+  type: {{ .Values.web.service.type | quote }}
   selector:
     {{- include "attune.componentLabels" (dict "root" . "component" "web") | nindent 4 }}
   ports:
@@ -380,7 +380,7 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "attune.fullname" . }}-web
+  name: {{ printf "%s-web" (include "attune.fullname" .) | quote }}
   labels:
     {{- include "attune.labels" . | nindent 4 }}
 spec:
@@ -401,8 +401,8 @@ spec:
       {{- end }}
       containers:
         - name: web
-          image: {{ include "attune.image" (dict "root" . "image" .Values.images.web) }}
-          imagePullPolicy: {{ .Values.images.web.pullPolicy }}
+          image: {{ include "attune.image" (dict "root" . "image" .Values.images.web) | quote }}
+          imagePullPolicy: {{ .Values.images.web.pullPolicy | quote }}
           env:
             - name: API_URL
               value: {{ .Values.web.config.apiUrl | quote }}
@@ -434,17 +434,17 @@ spec:
       volumes:
         - name: nginx-config
           configMap:
-            name: {{ include "attune.fullname" . }}-config
+            name: {{ printf "%s-config" (include "attune.fullname" .) | quote }}
 {{- if .Values.mcp.enabled }}
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "attune.mcpServiceName" . }}
+  name: {{ include "attune.mcpServiceName" . | quote }}
   labels:
     {{- include "attune.labels" . | nindent 4 }}
 spec:
-  type: {{ .Values.mcp.service.type }}
+  type: {{ .Values.mcp.service.type | quote }}
   selector:
     {{- include "attune.componentLabels" (dict "root" . "component" "mcp") | nindent 4 }}
   ports:
@@ -455,7 +455,7 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "attune.mcpServiceName" . }}
+  name: {{ include "attune.mcpServiceName" . | quote }}
   labels:
     {{- include "attune.labels" . | nindent 4 }}
 spec:
@@ -486,38 +486,38 @@ spec:
               done
       containers:
         - name: mcp
-          image: {{ include "attune.image" (dict "root" . "image" .Values.images.mcp) }}
-          imagePullPolicy: {{ .Values.images.mcp.pullPolicy }}
+          image: {{ include "attune.image" (dict "root" . "image" .Values.images.mcp) | quote }}
+          imagePullPolicy: {{ .Values.images.mcp.pullPolicy | quote }}
           command: ["/usr/local/bin/attune-mcp"]
           env:
             - name: ATTUNE_API_URL
-              value: http://{{ include "attune.apiServiceName" . }}:{{ .Values.api.service.port }}
+              value: {{ printf "http://%s:%v" (include "attune.apiServiceName" .) .Values.api.service.port | quote }}
             - name: ATTUNE_MCP_TRANSPORT
               value: http
             - name: ATTUNE_MCP_LISTEN_ADDR
-              value: 0.0.0.0:{{ .Values.mcp.service.port }}
+              value: {{ printf "0.0.0.0:%v" .Values.mcp.service.port | quote }}
             {{- if .Values.mcp.auth.useBootstrapTestUser }}
             - name: ATTUNE_LOGIN
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "attune.secretName" . }}
-                  key: TEST_LOGIN
+                  name: {{ include "attune.secretName" . | quote }}
+                  key: "TEST_LOGIN"
             - name: ATTUNE_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "attune.secretName" . }}
-                  key: TEST_PASSWORD
+                  name: {{ include "attune.secretName" . | quote }}
+                  key: "TEST_PASSWORD"
             {{- else }}
             - name: ATTUNE_LOGIN
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.mcp.auth.existingSecret }}
-                  key: {{ .Values.mcp.auth.loginKey }}
+                  name: {{ .Values.mcp.auth.existingSecret | quote }}
+                  key: {{ .Values.mcp.auth.loginKey | quote }}
             - name: ATTUNE_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.mcp.auth.existingSecret }}
-                  key: {{ .Values.mcp.auth.passwordKey }}
+                  name: {{ .Values.mcp.auth.existingSecret | quote }}
+                  key: {{ .Values.mcp.auth.passwordKey | quote }}
             {{- end }}
           ports:
             - name: http

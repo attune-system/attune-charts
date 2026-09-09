@@ -15,21 +15,21 @@
 {{- end -}}
 
 {{- define "attune.labels" -}}
-helm.sh/chart: {{ include "attune.chart" . }}
-app.kubernetes.io/name: {{ include "attune.name" . }}
-app.kubernetes.io/instance: {{ .Release.Name }}
+helm.sh/chart: {{ include "attune.chart" . | quote }}
+app.kubernetes.io/name: {{ include "attune.name" . | quote }}
+app.kubernetes.io/instance: {{ .Release.Name | quote }}
 app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
-app.kubernetes.io/managed-by: {{ .Release.Service }}
+app.kubernetes.io/managed-by: {{ .Release.Service | quote }}
 {{- end -}}
 
 {{- define "attune.selectorLabels" -}}
-app.kubernetes.io/name: {{ include "attune.name" . }}
-app.kubernetes.io/instance: {{ .Release.Name }}
+app.kubernetes.io/name: {{ include "attune.name" . | quote }}
+app.kubernetes.io/instance: {{ .Release.Name | quote }}
 {{- end -}}
 
 {{- define "attune.componentLabels" -}}
 {{ include "attune.selectorLabels" .root }}
-app.kubernetes.io/component: {{ .component }}
+app.kubernetes.io/component: {{ .component | quote }}
 {{- end -}}
 
 {{- define "attune.image" -}}
@@ -120,13 +120,13 @@ app.kubernetes.io/component: {{ .component }}
       done
   envFrom:
     - secretRef:
-        name: {{ include "attune.secretName" . }}
+        name: {{ include "attune.secretName" . | quote }}
 {{- end -}}
 
 {{- define "attune.waitForRabbitmqCredentials" -}}
 - name: wait-for-rabbitmq-credentials
-  image: "{{ .Values.rabbitmq.provisioning.image.repository }}:{{ .Values.rabbitmq.provisioning.image.tag }}"
-  imagePullPolicy: {{ .Values.rabbitmq.provisioning.image.pullPolicy }}
+  image: {{ printf "%s:%s" .Values.rabbitmq.provisioning.image.repository .Values.rabbitmq.provisioning.image.tag | quote }}
+  imagePullPolicy: {{ .Values.rabbitmq.provisioning.image.pullPolicy | quote }}
   command: ["python3", "-c"]
   args:
     - |
@@ -150,7 +150,7 @@ app.kubernetes.io/component: {{ .component }}
               time.sleep(2)
   envFrom:
     - secretRef:
-        name: {{ include "attune.secretName" . }}
+        name: {{ include "attune.secretName" . | quote }}
 {{- end -}}
 
 {{- define "attune.waitForRabbitmqPort" -}}

@@ -90,15 +90,17 @@ web:
 
 Fresh installations run initialization Jobs as normal release resources, so
 application init containers and Helm can wait for them together. Upgrades run
-the credential provisioners and initialization Jobs as ordered `pre-upgrade`
-hooks before rolling the Deployments.
+the PostgreSQL provisioner and initialization Jobs as ordered `pre-upgrade`
+hooks. The RabbitMQ provisioner remains a normal release Job. New application
+Pods wait for it to reconcile the password while the rolling update retains old
+ready replicas.
 
 The PostgreSQL provisioner creates a restricted login, transfers ownership of
 the Attune database and schema to it, and pre-creates extensions that require
 administrator privileges. The RabbitMQ provisioner creates a user without
 administrator tags and grants it access to the `/` vhost. Both provisioners
-reconcile ownership and permissions when they run again. They set a service
-password only when they create the account.
+reconcile ownership and permissions when they run again. The RabbitMQ
+provisioner also reconciles the service password from the runtime Secret.
 
 Attune `0.5.3` creates the bootstrap identity with the development password
 `TestPass123!`. Change that password after the first login. The current
@@ -337,10 +339,11 @@ when placing them in a URL. Keep both service usernames stable after the first
 installation. The PostgreSQL provisioner refuses to take ownership from a
 different role once schema objects exist.
 
-The provisioners create missing accounts and reconcile privileges, but do not
-change passwords on existing accounts. To rotate a password, change it in the
-backing service first, update the Kubernetes Secret, and then upgrade the Helm
-release. The release revision annotation rolls all credential-consuming Pods.
+The provisioners create missing accounts and reconcile privileges. PostgreSQL
+does not change passwords on existing accounts, so change that password in the
+database before updating the Kubernetes Secret. RabbitMQ reconciles the service
+password from the runtime Secret on each install or upgrade. The release
+revision annotation rolls all credential-consuming Pods.
 Do not rotate an administrator Secret by changing only its Kubernetes value:
 PostgreSQL and RabbitMQ use those values only when initializing empty data
 volumes.
@@ -372,6 +375,40 @@ sharedStorage:
 For a multi-node cluster, use a storage class that supports your chosen access
 mode and pod placement. `ReadWriteOnce` volumes can be mounted by several pods
 only when those pods run on the same node.
+
+The API, executor, supervisor, workers, and initialization Jobs share the three
+`sharedStorage` claims. Configure all three as RWX when those workloads can run
+on different nodes. Bundled PostgreSQL and RabbitMQ remain RWO:
+
+```yaml
+database:
+  postgresql:
+    persistence:
+      accessModes: [ReadWriteOnce]
+      storageClassName: longhorn
+
+rabbitmq:
+  persistence:
+    accessModes: [ReadWriteOnce]
+    storageClassName: longhorn
+
+sharedStorage:
+  packs:
+    accessModes: [ReadWriteMany]
+    storageClassName: longhorn
+  runtimeEnvs:
+    accessModes: [ReadWriteMany]
+    storageClassName: longhorn
+  artifacts:
+    accessModes: [ReadWriteMany]
+    storageClassName: longhorn
+```
+
+Longhorn RWX also requires the NFS client package on every schedulable node.
+Kubernetes cannot change a bound PVC from RWO to RWX. Back up and copy each
+shared volume into a new RWX claim, verify the copy, and retain the old volume
+until the migrated workload has been tested. Deleting a PVC can delete its
+backing volume when the reclaim policy is `Delete`.
 
 ## Use external infrastructure
 

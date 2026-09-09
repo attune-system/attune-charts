@@ -5,7 +5,7 @@ sites.
 
 | Chart | Version | Purpose |
 | --- | --- | --- |
-| `attune` | `0.6.1` | Attune services, workers, PostgreSQL, and RabbitMQ |
+| `attune` | `0.6.2` | Attune services, workers, PostgreSQL, and RabbitMQ |
 | `attune-site` | `0.1.5` | `attunedev.org` and its inquiry form |
 | `attune-docs-site` | `0.1.3` | `docs.attunedev.org` |
 
@@ -53,6 +53,7 @@ CloudNativePG with bundled RabbitMQ is the default:
 ```bash
 ./scripts/generate-attune-setup.sh \
   --storage-class longhorn \
+  --shared-storage-rwx-class longhorn \
   --database-size 100Gi
 ```
 
@@ -62,6 +63,9 @@ This mode creates `attune-setup/namespace.yaml`, `secrets.yaml`,
 `ImageCatalog`, pinned to its multi-architecture digest. Run the printed
 commands in order. Install the CloudNativePG operator before applying the
 generated `timescaledb.yaml`.
+
+Longhorn RWX requires the NFSv4 client package on every schedulable node. On
+Ubuntu and Debian nodes, install `nfs-common` before starting Attune pods.
 
 The default database has three instances. Set `--instances 1` only for a
 single-node or development cluster. The generator does not configure database
@@ -81,6 +85,7 @@ original generator options while adding ingress:
 ```bash
 ./scripts/generate-attune-setup.sh \
   --storage-class longhorn \
+  --shared-storage-rwx-class longhorn \
   --database-size 100Gi \
   --ingress-host attune.example.com \
   --ingress-tls-secret attune-example-com-tls \
@@ -145,13 +150,19 @@ delete or migrate an already deployed CNPG Cluster, PostgreSQL StatefulSet, or
 RabbitMQ StatefulSet. Move data and remove the old Kubernetes resources as a
 separate operation.
 
+The same rule applies when adding `--shared-storage-rwx-class` to an existing
+installation. Kubernetes cannot change a bound PVC from RWO to RWX. Back up and
+copy each shared volume into a new RWX claim, verify the copy, and retain the
+old volume until the migrated workload has been tested.
+
 The generator stores its generated credentials in the ignored
 `attune-setup/credentials.state` file. On later runs, `--force` reads that file
 and preserves every credential while regenerating the manifests. Keep both
 `credentials.state` and `secrets.yaml` private. Use `--rotate-secrets` only when
 you intend to rotate every generated credential. The state file stores
 credentials, not generator options. Repeat the original namespace, release,
-backend, host, storage, and ingress options on every `--force` run.
+backend, host, storage, and ingress options on every `--force` run, including
+`--shared-storage-rwx-class` for multi-node installations.
 
 Persistent PostgreSQL and RabbitMQ instances do not adopt a new administrator
 password from an updated Kubernetes Secret. Coordinate those password changes

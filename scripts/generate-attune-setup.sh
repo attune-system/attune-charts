@@ -23,6 +23,7 @@ rabbitmq_user="attune"
 rabbitmq_scheme=""
 rabbitmq_vhost="/"
 storage_class=""
+shared_storage_rwx_class=""
 admin_email="admin@attune.local"
 ingress_host=""
 ingress_class="nginx"
@@ -66,6 +67,8 @@ Options:
   --rabbitmq-scheme NAME amqp or amqps (default: amqps externally)
   --rabbitmq-vhost NAME  RabbitMQ virtual host (default: /)
   --storage-class NAME   StorageClass for database, RabbitMQ, and shared PVCs
+  --shared-storage-rwx-class NAME
+                         RWX StorageClass for all three shared PVCs
   --admin-email EMAIL    Initial Attune administrator login
   --ingress-host HOST    Enable ingress with this hostname
   --ingress-class NAME   IngressClass name (default: nginx)
@@ -92,6 +95,8 @@ Examples:
   ./scripts/generate-attune-setup.sh
   ./scripts/generate-attune-setup.sh --namespace production --release attune-prod \
     --storage-class longhorn --database-size 100Gi
+  ./scripts/generate-attune-setup.sh --database-mode bundled \
+    --storage-class longhorn --shared-storage-rwx-class longhorn
   # After installation and changing the bootstrap password through port-forwarding:
   ./scripts/generate-attune-setup.sh --namespace production --release attune-prod \
     --storage-class longhorn --database-size 100Gi \
@@ -334,6 +339,11 @@ while [[ $# -gt 0 ]]; do
       storage_class="$2"
       shift 2
       ;;
+    --shared-storage-rwx-class)
+      take_value "$1" "${2:-}"
+      shared_storage_rwx_class="$2"
+      shift 2
+      ;;
     --admin-email)
       take_value "$1" "${2:-}"
       admin_email="$2"
@@ -431,6 +441,8 @@ for host in "$database_host" "$rabbitmq_host"; do
 done
 [[ -z "$storage_class" || "$storage_class" =~ ^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$ ]] ||
   die "storage class contains unsupported characters"
+[[ -z "$shared_storage_rwx_class" || "$shared_storage_rwx_class" =~ ^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$ ]] ||
+  die "shared storage RWX class contains unsupported characters"
 [[ "$admin_email" =~ ^[A-Za-z0-9._+-]+@[A-Za-z0-9.-]+$ ]] || die "admin email is invalid"
 if [[ -n "$ingress_host" ]]; then
   validate_dns_hostname "ingress host" "$ingress_host"
@@ -757,15 +769,19 @@ cat >> "$output_dir/values.yaml" <<EOF
     enabled: ${rabbitmq_provisioning}
   persistence:
     storageClassName: "${storage_class}"
+EOF
 
-sharedStorage:
-  packs:
-    storageClassName: "${storage_class}"
-  runtimeEnvs:
-    storageClassName: "${storage_class}"
-  artifacts:
-    storageClassName: "${storage_class}"
+shared_storage_class="${shared_storage_rwx_class:-$storage_class}"
+printf '\nsharedStorage:\n' >> "$output_dir/values.yaml"
+for shared_claim in packs runtimeEnvs artifacts; do
+  printf '  %s:\n' "$shared_claim" >> "$output_dir/values.yaml"
+  if [[ -n "$shared_storage_rwx_class" ]]; then
+    printf '    accessModes:\n      - ReadWriteMany\n' >> "$output_dir/values.yaml"
+  fi
+  printf '    storageClassName: "%s"\n' "$shared_storage_class" >> "$output_dir/values.yaml"
+done
 
+cat >> "$output_dir/values.yaml" <<EOF
 web:
   ingress:
     enabled: ${ingress_enabled}
@@ -799,6 +815,10 @@ fi
 printf '  helm upgrade --install %s attune/attune --namespace %s --values %q --wait --wait-for-jobs\n' \
   "$release" "$namespace" "$output_dir/values.yaml"
 printf '\nDatabase mode: %s\nRabbitMQ mode: %s\n' "$database_mode" "$rabbitmq_mode"
+if [[ -n "$shared_storage_rwx_class" ]]; then
+  printf 'Shared storage: ReadWriteMany with StorageClass %s. Install its mount client on every schedulable node.\n' "$shared_storage_rwx_class"
+  printf 'Do not apply this access-mode change to bound PVCs. Back up and migrate their data to new RWX claims.\n'
+fi
 if [[ "$database_mode" == cnpg ]]; then
   printf 'The CloudNativePG operator must already be installed.\n'
 elif [[ "$database_mode" == external ]]; then

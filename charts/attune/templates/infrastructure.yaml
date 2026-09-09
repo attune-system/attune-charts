@@ -2,7 +2,7 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "attune.postgresqlServiceName" . }}
+  name: {{ include "attune.postgresqlServiceName" . | quote }}
   labels:
     {{- include "attune.labels" . | nindent 4 }}
 spec:
@@ -16,11 +16,11 @@ spec:
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: {{ include "attune.postgresqlServiceName" . }}
+  name: {{ include "attune.postgresqlServiceName" . | quote }}
   labels:
     {{- include "attune.labels" . | nindent 4 }}
 spec:
-  serviceName: {{ include "attune.postgresqlServiceName" . }}
+  serviceName: {{ include "attune.postgresqlServiceName" . | quote }}
   replicas: 1
   selector:
     matchLabels:
@@ -32,19 +32,19 @@ spec:
     spec:
       containers:
         - name: postgresql
-          image: "{{ .Values.database.postgresql.image.repository }}:{{ .Values.database.postgresql.image.tag }}"
+          image: {{ printf "%s:%s" .Values.database.postgresql.image.repository .Values.database.postgresql.image.tag | quote }}
           imagePullPolicy: IfNotPresent
           env:
             - name: POSTGRES_USER
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "attune.postgresqlAdminSecretName" . }}
-                  key: {{ .Values.database.postgresql.admin.usernameKey }}
+                  name: {{ include "attune.postgresqlAdminSecretName" . | quote }}
+                  key: {{ .Values.database.postgresql.admin.usernameKey | quote }}
             - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "attune.postgresqlAdminSecretName" . }}
-                  key: {{ .Values.database.postgresql.admin.passwordKey }}
+                  name: {{ include "attune.postgresqlAdminSecretName" . | quote }}
+                  key: {{ .Values.database.postgresql.admin.passwordKey | quote }}
             - name: POSTGRES_DB
               value: {{ .Values.database.database | quote }}
             - name: PGDATA
@@ -75,9 +75,9 @@ spec:
           {{- toYaml .Values.database.postgresql.persistence.accessModes | nindent 10 }}
         resources:
           requests:
-            storage: {{ .Values.database.postgresql.persistence.size }}
+            storage: {{ .Values.database.postgresql.persistence.size | quote }}
         {{- if .Values.database.postgresql.persistence.storageClassName }}
-        storageClassName: {{ .Values.database.postgresql.persistence.storageClassName }}
+        storageClassName: {{ .Values.database.postgresql.persistence.storageClassName | quote }}
         {{- end }}
 {{- end }}
 {{- if .Values.rabbitmq.enabled }}
@@ -85,7 +85,7 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "attune.rabbitmqServiceName" . }}
+  name: {{ include "attune.rabbitmqServiceName" . | quote }}
   labels:
     {{- include "attune.labels" . | nindent 4 }}
 spec:
@@ -102,11 +102,11 @@ spec:
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: {{ include "attune.rabbitmqServiceName" . }}
+  name: {{ include "attune.rabbitmqServiceName" . | quote }}
   labels:
     {{- include "attune.labels" . | nindent 4 }}
 spec:
-  serviceName: {{ include "attune.rabbitmqServiceName" . }}
+  serviceName: {{ include "attune.rabbitmqServiceName" . | quote }}
   replicas: 1
   selector:
     matchLabels:
@@ -118,19 +118,19 @@ spec:
     spec:
       containers:
         - name: rabbitmq
-          image: "{{ .Values.rabbitmq.image.repository }}:{{ .Values.rabbitmq.image.tag }}"
+          image: {{ printf "%s:%s" .Values.rabbitmq.image.repository .Values.rabbitmq.image.tag | quote }}
           imagePullPolicy: IfNotPresent
           env:
             - name: RABBITMQ_DEFAULT_USER
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "attune.rabbitmqAdminSecretName" . }}
-                  key: {{ .Values.rabbitmq.admin.usernameKey }}
+                  name: {{ include "attune.rabbitmqAdminSecretName" . | quote }}
+                  key: {{ .Values.rabbitmq.admin.usernameKey | quote }}
             - name: RABBITMQ_DEFAULT_PASS
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "attune.rabbitmqAdminSecretName" . }}
-                  key: {{ .Values.rabbitmq.admin.passwordKey }}
+                  name: {{ include "attune.rabbitmqAdminSecretName" . | quote }}
+                  key: {{ .Values.rabbitmq.admin.passwordKey | quote }}
             - name: RABBITMQ_DEFAULT_VHOST
               value: /
           ports:
@@ -165,8 +165,8 @@ spec:
           {{- toYaml .Values.rabbitmq.persistence.accessModes | nindent 10 }}
         resources:
           requests:
-            storage: {{ .Values.rabbitmq.persistence.size }}
+            storage: {{ .Values.rabbitmq.persistence.size | quote }}
         {{- if .Values.rabbitmq.persistence.storageClassName }}
-        storageClassName: {{ .Values.rabbitmq.persistence.storageClassName }}
+        storageClassName: {{ .Values.rabbitmq.persistence.storageClassName | quote }}
         {{- end }}
 {{- end }}

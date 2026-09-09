@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ printf "%s-migrations-%d" (include "attune.fullname" .) .Release.Revision | trunc 63 | trimSuffix "-" }}
+  name: {{ printf "%s-migrations-%d" (include "attune.fullname" .) .Release.Revision | trunc 63 | trimSuffix "-" | quote }}
   labels:
     {{- include "attune.labels" . | nindent 4 }}
     app.kubernetes.io/component: migrations
@@ -27,26 +27,23 @@ spec:
         {{- include "attune.waitForDatabaseCredentials" . | nindent 8 }}
       containers:
         - name: migrations
-          image: {{ include "attune.image" (dict "root" . "image" .Values.images.migrations) }}
-          imagePullPolicy: {{ .Values.images.migrations.pullPolicy }}
+          image: {{ include "attune.image" (dict "root" . "image" .Values.images.migrations) | quote }}
+          imagePullPolicy: {{ .Values.images.migrations.pullPolicy | quote }}
           envFrom:
             - secretRef:
-                name: {{ include "attune.secretName" . }}
+                name: {{ include "attune.secretName" . | quote }}
           env:
             - name: MIGRATIONS_DIR
               value: /migrations
             - name: ATTUNE_STANDARD_PACK_INDEX_REF
-              {{- if not (regexMatch "^[0-9a-f]{40}$" .Values.packRegistry.standardIndexRef) }}
-              {{- fail "packRegistry.standardIndexRef must be a 40-character lowercase commit SHA" }}
-              {{- end }}
-              value: {{ .Values.packRegistry.standardIndexRef | quote }}
+              value: {{ .Values.packRegistry.standardIndexRef | default "b50e4e6d5003717505c7b894f14b8049de32c735" | quote }}
           resources:
             {{- toYaml .Values.jobs.migrations.resources | nindent 12 }}
 ---
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ printf "%s-init-user-%d" (include "attune.fullname" .) .Release.Revision | trunc 63 | trimSuffix "-" }}
+  name: {{ printf "%s-init-user-%d" (include "attune.fullname" .) .Release.Revision | trunc 63 | trimSuffix "-" | quote }}
   labels:
     {{- include "attune.labels" . | nindent 4 }}
     app.kubernetes.io/component: init-user
@@ -70,11 +67,11 @@ spec:
       {{- end }}
       containers:
         - name: init-user
-          image: {{ include "attune.image" (dict "root" . "image" .Values.images.initUser) }}
-          imagePullPolicy: {{ .Values.images.initUser.pullPolicy }}
+          image: {{ include "attune.image" (dict "root" . "image" .Values.images.initUser) | quote }}
+          imagePullPolicy: {{ .Values.images.initUser.pullPolicy | quote }}
           envFrom:
             - secretRef:
-                name: {{ include "attune.secretName" . }}
+                name: {{ include "attune.secretName" . | quote }}
           command: ["/bin/sh", "-ec"]
           args:
             - |
@@ -89,7 +86,7 @@ spec:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ printf "%s-init-packs-%d" (include "attune.fullname" .) .Release.Revision | trunc 63 | trimSuffix "-" }}
+  name: {{ printf "%s-init-packs-%d" (include "attune.fullname" .) .Release.Revision | trunc 63 | trimSuffix "-" | quote }}
   labels:
     {{- include "attune.labels" . | nindent 4 }}
     app.kubernetes.io/component: init-packs
@@ -113,11 +110,11 @@ spec:
       {{- end }}
       containers:
         - name: init-packs
-          image: {{ include "attune.image" (dict "root" . "image" .Values.images.initPacks) }}
-          imagePullPolicy: {{ .Values.images.initPacks.pullPolicy }}
+          image: {{ include "attune.image" (dict "root" . "image" .Values.images.initPacks) | quote }}
+          imagePullPolicy: {{ .Values.images.initPacks.pullPolicy | quote }}
           envFrom:
             - secretRef:
-                name: {{ include "attune.secretName" . }}
+                name: {{ include "attune.secretName" . | quote }}
           command: ["/bin/sh", "-ec"]
           args:
             - |
@@ -163,10 +160,10 @@ spec:
       volumes:
         - name: packs
           persistentVolumeClaim:
-            claimName: {{ include "attune.fullname" . }}-packs
+            claimName: {{ printf "%s-packs" (include "attune.fullname" .) | quote }}
         - name: runtime-envs
           persistentVolumeClaim:
-            claimName: {{ include "attune.fullname" . }}-runtime-envs
+            claimName: {{ printf "%s-runtime-envs" (include "attune.fullname" .) | quote }}
         - name: artifacts
           persistentVolumeClaim:
-            claimName: {{ include "attune.fullname" . }}-artifacts
+            claimName: {{ printf "%s-artifacts" (include "attune.fullname" .) | quote }}

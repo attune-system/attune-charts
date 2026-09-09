@@ -17,12 +17,14 @@ setup_generator=(
   ATTUNE_SETUP_ENCRYPTION_KEY=encryption-key-with-at-least-32-characters
   "$root_dir/scripts/generate-attune-setup.sh"
 )
+helm_316=(docker run --rm -i -v "$root_dir:/work" -w /work alpine/helm:3.16.1)
 
 "${setup_generator[@]}" \
     --namespace verify \
     --release verify \
     --cluster-name verify-timescaledb \
     --storage-class verify-storage \
+    --shared-storage-rwx-class verify-rwx-storage \
     --ingress-host attune.example.com \
     --ingress-class traefik.io \
     --ingress-tls-secret attune.example.com-tls \
@@ -75,13 +77,97 @@ helm template verify "$root_dir/charts/attune" \
 docker run --rm -i ghcr.io/yannh/kubeconform:v0.7.0 \
   -strict -summary < "$render_dir/attune-cnpg.yaml"
 
+shared_pvc_configuration="$({
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc 'select(.kind == "PersistentVolumeClaim") | [.metadata.name, .spec.accessModes[0], .spec.storageClassName] | @tsv' - \
+    < "$render_dir/attune-cnpg.yaml"
+})"
+expected_shared_pvc_configuration=$'verify-attune-packs\tReadWriteMany\tverify-rwx-storage\tverify-attune-runtime-envs\tReadWriteMany\tverify-rwx-storage\tverify-attune-artifacts\tReadWriteMany\tverify-rwx-storage'
+if [[ "$shared_pvc_configuration" != "$expected_shared_pvc_configuration" ]]; then
+  printf 'generated multi-node setup did not configure all shared PVCs for RWX\n' >&2
+  exit 1
+fi
+
+"${helm_316[@]}" template verify charts/attune \
+  --namespace verify \
+  --set-string security.existingSecret=verify-runtime \
+  --set-json packRegistry.standardIndexRef=null > "$render_dir/attune-rancher-null.yaml"
+if ! grep -q 'value: "b50e4e6d5003717505c7b894f14b8049de32c735"' "$render_dir/attune-rancher-null.yaml"; then
+  printf 'Rancher null override did not restore the pinned standard index ref\n' >&2
+  exit 1
+fi
+
+"${helm_316[@]}" template verify charts/attune \
+  --namespace verify \
+  --set-string security.existingSecret=verify-runtime \
+  --set-json web.ingress.className=null \
+  --set-json security.oidc.discoveryUrl=null \
+  --set-json web.config.apiUrl=null \
+  --set-json database.host=null \
+  --set-json rabbitmq.host=null \
+  --set-json api.resources=null \
+  --set-json images.api.tag=null \
+  --set-json sharedStorage.packs.storageClassName=null \
+  --set-string sharedStorage.packs.size=1e6 \
+  --set-json actionWorkers=null \
+  --set-json sensorWorkers=null \
+  > "$render_dir/attune-optional-values.yaml"
+
+"${helm_316[@]}" template verify charts/attune \
+  --namespace verify \
+  --set-string security.existingSecret=verify-runtime \
+  --set-json 'actionWorkers=[{"name":"minimal-action","image":"python:3.12"}]' \
+  --set-json 'sensorWorkers=[{"name":"minimal-sensor","image":"python:3.12"}]' \
+  > "$render_dir/attune-minimal-workers.yaml"
+
+if "${helm_316[@]}" template verify charts/attune \
+  --namespace verify \
+  --set-string security.existingSecret=verify-runtime \
+  --set-json 'actionWorkers=[{"name":"stopped","image":"python:3.12","replicas":0}]' \
+  > /dev/null 2>&1; then
+  printf 'chart accepted a worker replica count that templates cannot preserve\n' >&2
+  exit 1
+fi
+
+if rancher_type_error="$({
+  "${helm_316[@]}" template verify charts/attune \
+    --namespace verify \
+    --set-string security.existingSecret=verify-runtime \
+    --set-json 'packRegistry.standardIndexRef={}' 2>&1
+})"; then
+  printf 'chart accepted a map for packRegistry.standardIndexRef\n' >&2
+  exit 1
+fi
+if [[ "$rancher_type_error" != *standardIndexRef* ||
+  "$rancher_type_error" == *regexMatch* ||
+  "$rancher_type_error" == *'wrong type for value'* ||
+  "$rancher_type_error" == *'YAML parse error'* ]]; then
+  printf 'chart returned an unhelpful standardIndexRef type error\n' >&2
+  exit 1
+fi
+
+if rancher_scalar_error="$({
+  "${helm_316[@]}" template verify charts/attune \
+    --namespace verify \
+    --set-string security.existingSecret=verify-runtime \
+    --set-string 'api.service.type=foo: bar' 2>&1
+})"; then
+  printf 'chart accepted an invalid service type\n' >&2
+  exit 1
+fi
+if [[ "$rancher_scalar_error" != *api.service.type* ||
+  "$rancher_scalar_error" == *'YAML parse error'* ]]; then
+  printf 'chart returned an unhelpful Rancher scalar error\n' >&2
+  exit 1
+fi
+
 if grep -Eq 'kind: (Secret|StatefulSet).*postgresql|name: verify-attune-postgresql' \
   "$render_dir/attune-cnpg.yaml"; then
   printf 'external CNPG configuration rendered bundled PostgreSQL resources\n' >&2
   exit 1
 fi
 
-if ! grep -q 'name: verify-attune-provision-rabbitmq-' "$render_dir/attune-cnpg.yaml"; then
+if ! grep -q 'name: "verify-attune-provision-rabbitmq-' "$render_dir/attune-cnpg.yaml"; then
   printf 'generated setup did not render RabbitMQ provisioning\n' >&2
   exit 1
 fi
@@ -143,11 +229,24 @@ for bundled_resource in \
   verify-attune-rabbitmq \
   verify-attune-provision-postgresql- \
   verify-attune-provision-rabbitmq-; do
-  if ! grep -q "name: ${bundled_resource}" "$render_dir/attune-bundled.yaml"; then
+  if ! grep -q "name: \"${bundled_resource}" "$render_dir/attune-bundled.yaml"; then
     printf 'bundled setup did not render %s\n' "$bundled_resource" >&2
     exit 1
   fi
 done
+
+rabbitmq_password_reconciliations="$({
+  grep -Fc 'body={"password": os.environ["RABBITMQ_PASSWORD"], "tags": ""}' \
+    "$render_dir/attune-bundled.yaml"
+})"
+if [[ "$rabbitmq_password_reconciliations" -ne 2 ]]; then
+  printf 'RabbitMQ provisioner does not reconcile both new and existing user passwords\n' >&2
+  exit 1
+fi
+if grep -q 'body={"password_hash": existing_user\["password_hash"\]' "$render_dir/attune-bundled.yaml"; then
+  printf 'RabbitMQ provisioner preserves a stale existing user password\n' >&2
+  exit 1
+fi
 
 ATTUNE_SETUP_DATABASE_PASSWORD='external@database:password' \
 ATTUNE_SETUP_RABBITMQ_PASSWORD='external@rabbitmq:password' \
@@ -177,7 +276,7 @@ docker run --rm -i ghcr.io/yannh/kubeconform:v0.7.0 \
 docker run --rm -i ghcr.io/yannh/kubeconform:v0.7.0 \
   -strict -summary < "$render_dir/attune-external.yaml"
 
-if grep -Eq 'name: verify-attune-(postgresql|rabbitmq|provision-postgresql-|provision-rabbitmq-)' \
+if grep -Eq 'name: "verify-attune-(postgresql|rabbitmq|provision-postgresql-|provision-rabbitmq-)' \
   "$render_dir/attune-external.yaml"; then
   printf 'external setup rendered bundled data services or provisioners\n' >&2
   exit 1
@@ -368,8 +467,8 @@ for mode_pair in \
 
   postgresql_rendered=false
   rabbitmq_rendered=false
-  grep -q 'name: verify-attune-postgresql' "$render_dir/attune-$mode_name.yaml" && postgresql_rendered=true
-  grep -q 'name: verify-attune-rabbitmq' "$render_dir/attune-$mode_name.yaml" && rabbitmq_rendered=true
+  grep -q 'name: "verify-attune-postgresql"' "$render_dir/attune-$mode_name.yaml" && postgresql_rendered=true
+  grep -q 'name: "verify-attune-rabbitmq"' "$render_dir/attune-$mode_name.yaml" && rabbitmq_rendered=true
   if [[ "$postgresql_rendered" != "$([[ "$database_mode" == bundled ]] && printf true || printf false)" ]]; then
     printf 'database mode %s rendered the wrong PostgreSQL resources\n' "$database_mode" >&2
     exit 1
@@ -388,6 +487,17 @@ for mode_pair in \
       exit 1
   fi
 done
+
+default_shared_modes="$({
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc 'select(.kind == "PersistentVolumeClaim") | [.metadata.name, .spec.accessModes[0]] | @tsv' - \
+    < "$render_dir/attune-bundled-bundled.yaml"
+})"
+expected_default_shared_modes=$'verify-attune-packs\tReadWriteOnce\tverify-attune-runtime-envs\tReadWriteOnce\tverify-attune-artifacts\tReadWriteOnce'
+if [[ "$default_shared_modes" != "$expected_default_shared_modes" ]]; then
+  printf 'default shared PVC access mode changed from ReadWriteOnce\n' >&2
+  exit 1
+fi
 
 docker run --rm -i ghcr.io/yannh/kubeconform:v0.7.0 \
   -strict -summary < "$render_dir/attune-mode-matrix.yaml"
@@ -655,20 +765,23 @@ if grep -Eq '^[[:space:]]+(jwtSecret|encryptionKey|clientSecret|searchBindPasswo
   exit 1
 fi
 
-mapfile -t job_hooks < <(
+pre_upgrade_hook_count="$({
   docker run --rm -i mikefarah/yq:4.47.2 \
-    eval-all --no-doc 'select(.kind == "Job") | .metadata.annotations."helm.sh/hook"' - \
+    eval-all --no-doc '[select(.kind == "Job" and .metadata.annotations."helm.sh/hook" == "pre-upgrade")] | length' - \
     < "$render_dir/attune-upgrade.yaml"
-)
+})"
 
-if [[ "${#job_hooks[@]}" -ne 5 ]]; then
-  printf 'expected five upgrade Jobs, found %d\n' "${#job_hooks[@]}" >&2
+if [[ "$pre_upgrade_hook_count" -ne 4 ]]; then
+  printf 'expected four pre-upgrade Jobs, found %d\n' "$pre_upgrade_hook_count" >&2
   exit 1
 fi
 
-for hook in "${job_hooks[@]}"; do
-  if [[ "$hook" != pre-upgrade ]]; then
-    printf 'upgrade Job has hook %s, expected pre-upgrade\n' "$hook" >&2
-    exit 1
-  fi
-done
+rabbitmq_upgrade_hook="$({
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc 'select(.kind == "Job" and .metadata.labels."app.kubernetes.io/component" == "provision-rabbitmq") | .metadata.annotations."helm.sh/hook" // ""' - \
+    < "$render_dir/attune-upgrade.yaml"
+})"
+if [[ -n "$rabbitmq_upgrade_hook" ]]; then
+  printf 'RabbitMQ provisioning must be a normal upgrade resource, found hook %s\n' "$rabbitmq_upgrade_hook" >&2
+  exit 1
+fi

@@ -6,21 +6,21 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ $resourceName }}
+  name: {{ $resourceName | quote }}
   labels:
     {{- include "attune.labels" $ | nindent 4 }}
-    app.kubernetes.io/component: {{ $component }}
+    app.kubernetes.io/component: {{ $component | quote }}
 spec:
   replicas: {{ .replicas | default 1 }}
   selector:
     matchLabels:
       {{- include "attune.selectorLabels" $ | nindent 6 }}
-      app.kubernetes.io/component: {{ $component }}
+      app.kubernetes.io/component: {{ $component | quote }}
   template:
     metadata:
       labels:
         {{- include "attune.selectorLabels" $ | nindent 8 }}
-        app.kubernetes.io/component: {{ $component }}
+        app.kubernetes.io/component: {{ $component | quote }}
       annotations:
         attune.dev/release-revision: {{ $.Release.Revision | quote }}
     spec:
@@ -29,7 +29,7 @@ spec:
         {{- toYaml $.Values.global.imagePullSecrets | nindent 8 }}
       {{- end }}
       {{- if .runtimeClassName }}
-      runtimeClassName: {{ .runtimeClassName }}
+      runtimeClassName: {{ .runtimeClassName | quote }}
       {{- end }}
       {{- if .nodeSelector }}
       nodeSelector:
@@ -46,8 +46,8 @@ spec:
       {{- end }}
       initContainers:
         - name: init-agent
-          image: {{ include "attune.image" (dict "root" $ "image" $.Values.images.agent) }}
-          imagePullPolicy: {{ $.Values.images.agent.pullPolicy }}
+          image: {{ include "attune.image" (dict "root" $ "image" $.Values.images.agent) | quote }}
+          imagePullPolicy: {{ $.Values.images.agent.pullPolicy | quote }}
           command: ["/bin/sh", "-ec"]
           args:
             - |
@@ -73,7 +73,7 @@ spec:
               done
           envFrom:
             - secretRef:
-                name: {{ include "attune.secretName" $ }}
+                name: {{ include "attune.secretName" $ | quote }}
         - name: wait-for-packs
           image: busybox:1.36
           command: ["/bin/sh", "-ec"]
@@ -94,11 +94,11 @@ spec:
       containers:
         - name: worker
           image: {{ .image | quote }}
-          imagePullPolicy: {{ .imagePullPolicy | default "IfNotPresent" }}
+          imagePullPolicy: {{ .imagePullPolicy | default "IfNotPresent" | quote }}
           command: ["/opt/attune/agent/attune-agent"]
           envFrom:
             - secretRef:
-                name: {{ include "attune.secretName" $ }}
+                name: {{ include "attune.secretName" $ | quote }}
           env:
             - name: ATTUNE_CONFIG
               value: /opt/attune/config.yaml
@@ -111,7 +111,7 @@ spec:
                 fieldRef:
                   fieldPath: metadata.name
             - name: ATTUNE_API_URL
-              value: http://{{ include "attune.apiServiceName" $ }}:{{ $.Values.api.service.port }}
+              value: {{ printf "http://%s:%v" (include "attune.apiServiceName" $) $.Values.api.service.port | quote }}
             - name: RUST_LOG
               value: {{ .logLevel | default "info" | quote }}
             {{- if .runtimes }}
@@ -142,16 +142,16 @@ spec:
           emptyDir: {}
         - name: config
           configMap:
-            name: {{ include "attune.fullname" $ }}-config
+            name: {{ printf "%s-config" (include "attune.fullname" $) | quote }}
         - name: packs
           persistentVolumeClaim:
-            claimName: {{ include "attune.fullname" $ }}-packs
+            claimName: {{ printf "%s-packs" (include "attune.fullname" $) | quote }}
         - name: runtime-envs
           persistentVolumeClaim:
-            claimName: {{ include "attune.fullname" $ }}-runtime-envs
+            claimName: {{ printf "%s-runtime-envs" (include "attune.fullname" $) | quote }}
         - name: artifacts
           persistentVolumeClaim:
-            claimName: {{ include "attune.fullname" $ }}-artifacts
+            claimName: {{ printf "%s-artifacts" (include "attune.fullname" $) | quote }}
 {{ end }}
 {{ range .Values.sensorWorkers }}
 {{- $poolName := .name | lower | replace "_" "-" -}}
@@ -161,21 +161,21 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ $resourceName }}
+  name: {{ $resourceName | quote }}
   labels:
     {{- include "attune.labels" $ | nindent 4 }}
-    app.kubernetes.io/component: {{ $component }}
+    app.kubernetes.io/component: {{ $component | quote }}
 spec:
   replicas: {{ .replicas | default 1 }}
   selector:
     matchLabels:
       {{- include "attune.selectorLabels" $ | nindent 6 }}
-      app.kubernetes.io/component: {{ $component }}
+      app.kubernetes.io/component: {{ $component | quote }}
   template:
     metadata:
       labels:
         {{- include "attune.selectorLabels" $ | nindent 8 }}
-        app.kubernetes.io/component: {{ $component }}
+        app.kubernetes.io/component: {{ $component | quote }}
       annotations:
         attune.dev/release-revision: {{ $.Release.Revision | quote }}
     spec:
@@ -184,7 +184,7 @@ spec:
         {{- toYaml $.Values.global.imagePullSecrets | nindent 8 }}
       {{- end }}
       {{- if .runtimeClassName }}
-      runtimeClassName: {{ .runtimeClassName }}
+      runtimeClassName: {{ .runtimeClassName | quote }}
       {{- end }}
       {{- if .nodeSelector }}
       nodeSelector:
@@ -197,8 +197,8 @@ spec:
       terminationGracePeriodSeconds: {{ .stopGracePeriod | default 45 }}
       initContainers:
         - name: init-agent
-          image: {{ include "attune.image" (dict "root" $ "image" $.Values.images.agent) }}
-          imagePullPolicy: {{ $.Values.images.agent.pullPolicy }}
+          image: {{ include "attune.image" (dict "root" $ "image" $.Values.images.agent) | quote }}
+          imagePullPolicy: {{ $.Values.images.agent.pullPolicy | quote }}
           command: ["/bin/sh", "-ec"]
           args:
             - |
@@ -224,7 +224,7 @@ spec:
               done
           envFrom:
             - secretRef:
-                name: {{ include "attune.secretName" $ }}
+                name: {{ include "attune.secretName" $ | quote }}
         - name: wait-for-packs
           image: busybox:1.36
           command: ["/bin/sh", "-ec"]
@@ -245,11 +245,11 @@ spec:
       containers:
         - name: sensor
           image: {{ .image | quote }}
-          imagePullPolicy: {{ .imagePullPolicy | default "IfNotPresent" }}
+          imagePullPolicy: {{ .imagePullPolicy | default "IfNotPresent" | quote }}
           command: ["/opt/attune/agent/attune-sensor-agent"]
           envFrom:
             - secretRef:
-                name: {{ include "attune.secretName" $ }}
+                name: {{ include "attune.secretName" $ | quote }}
           env:
             - name: ATTUNE_CONFIG
               value: /opt/attune/config.yaml
@@ -258,7 +258,7 @@ spec:
             - name: ATTUNE__WORKER__WORKER_TYPE
               value: container
             - name: ATTUNE_API_URL
-              value: http://{{ include "attune.apiServiceName" $ }}:{{ $.Values.api.service.port }}
+              value: {{ printf "http://%s:%v" (include "attune.apiServiceName" $) $.Values.api.service.port | quote }}
             - name: ATTUNE_NOTIFIER_WS_URL
               value: {{ .notifierWsUrl | default (printf "ws://%s:%v/ws" (include "attune.notifierServiceName" $) $.Values.notifier.service.port) | quote }} # nosemgrep: javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket -- Chart default is an explicit in-cluster plaintext endpoint.
             - name: ATTUNE__SENSOR__ALLOW_INSECURE_NOTIFIER_WS
@@ -293,11 +293,11 @@ spec:
           emptyDir: {}
         - name: config
           configMap:
-            name: {{ include "attune.fullname" $ }}-config
+            name: {{ printf "%s-config" (include "attune.fullname" $) | quote }}
         - name: packs
           persistentVolumeClaim:
-            claimName: {{ include "attune.fullname" $ }}-packs
+            claimName: {{ printf "%s-packs" (include "attune.fullname" $) | quote }}
         - name: runtime-envs
           persistentVolumeClaim:
-            claimName: {{ include "attune.fullname" $ }}-runtime-envs
+            claimName: {{ printf "%s-runtime-envs" (include "attune.fullname" $) | quote }}
 {{- end }}

@@ -1,0 +1,694 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Attune Helm chart values",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "global",
+    "security",
+    "database",
+    "rabbitmq",
+    "packRegistry",
+    "sharedStorage",
+    "images",
+    "jobs",
+    "api",
+    "executor",
+    "supervisor",
+    "notifier",
+    "mcp",
+    "web"
+  ],
+  "properties": {
+    "nameOverride": {
+      "type": "string",
+      "maxLength": 63
+    },
+    "fullnameOverride": {
+      "type": "string",
+      "maxLength": 63
+    },
+    "global": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["imageTag"],
+      "properties": {
+        "imageRegistry": { "type": "string" },
+        "imageNamespace": { "type": "string" },
+        "imageTag": { "type": "string", "minLength": 1 },
+        "imagePullSecrets": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/localObjectReference" }
+        }
+      }
+    },
+    "security": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["existingSecret", "identitySecret", "loginPage", "oidc", "activeDirectory"],
+      "properties": {
+        "existingSecret": { "type": "string" },
+        "identitySecret": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "existingSecret": { "type": "string" }
+          }
+        },
+        "loginPage": {
+          "type": "object",
+          "additionalProperties": true,
+          "required": ["showLocalLogin", "showOidcLogin", "showActiveDirectoryLogin"],
+          "properties": {
+            "showLocalLogin": { "type": "boolean" },
+            "showOidcLogin": { "type": "boolean" },
+            "showActiveDirectoryLogin": { "type": "boolean" }
+          }
+        },
+        "oidc": {
+          "type": "object",
+          "additionalProperties": true,
+          "required": [
+            "enabled",
+            "providerName",
+            "scopes"
+          ],
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "discoveryUrl": { "type": "string" },
+            "clientId": { "type": "string" },
+            "providerName": { "type": "string", "minLength": 1 },
+            "providerLabel": { "type": "string" },
+            "providerIconUrl": { "type": "string" },
+            "redirectUri": { "type": "string" },
+            "postLogoutRedirectUri": { "type": "string" },
+            "scopes": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": { "type": "string", "minLength": 1 }
+            }
+          }
+        },
+        "activeDirectory": {
+          "type": "object",
+          "additionalProperties": true,
+          "required": [
+            "enabled",
+            "userFilter",
+            "loginAttr",
+            "emailAttr",
+            "displayNameAttr",
+            "groupAttr",
+            "startTls",
+            "dangerSkipTlsVerify",
+            "providerName"
+          ],
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "url": { "type": "string", "pattern": "^$|^ldaps?://" },
+            "bindDnTemplate": { "type": "string" },
+            "userSearchBase": { "type": "string" },
+            "userFilter": { "type": "string", "minLength": 1 },
+            "searchBindDn": { "type": "string" },
+            "loginAttr": { "type": "string", "minLength": 1 },
+            "emailAttr": { "type": "string", "minLength": 1 },
+            "displayNameAttr": { "type": "string", "minLength": 1 },
+            "groupAttr": { "type": "string", "minLength": 1 },
+            "startTls": { "type": "boolean" },
+            "dangerSkipTlsVerify": { "type": "boolean" },
+            "providerName": { "type": "string", "minLength": 1 },
+            "providerLabel": { "type": "string" },
+            "providerIconUrl": { "type": "string" }
+          }
+        }
+      }
+    },
+    "database": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["schema", "database", "port", "postgresql"],
+      "properties": {
+        "schema": { "type": "string", "minLength": 1 },
+        "database": { "type": "string", "minLength": 1 },
+        "host": { "type": "string" },
+        "port": { "$ref": "#/definitions/port" },
+        "postgresql": {
+          "type": "object",
+          "additionalProperties": true,
+          "required": ["enabled", "admin", "provisioning", "image", "persistence"],
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "admin": {
+              "type": "object",
+              "additionalProperties": true,
+              "required": ["usernameKey", "passwordKey"],
+              "properties": {
+                "existingSecret": { "type": "string" },
+                "usernameKey": { "$ref": "#/definitions/secretKey" },
+                "passwordKey": { "$ref": "#/definitions/secretKey" }
+              }
+            },
+            "provisioning": {
+              "type": "object",
+              "additionalProperties": true,
+              "required": ["enabled", "activeDeadlineSeconds"],
+              "properties": {
+                "enabled": { "type": "boolean" },
+                "activeDeadlineSeconds": { "type": "integer", "minimum": 1 }
+              }
+            },
+            "image": { "$ref": "#/definitions/infrastructureImage" },
+            "persistence": { "$ref": "#/definitions/persistence" },
+            "resources": { "$ref": "#/definitions/resources" }
+          }
+        }
+      }
+    },
+    "rabbitmq": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "port",
+        "managementPort",
+        "enabled",
+        "admin",
+        "provisioning",
+        "image",
+        "persistence"
+      ],
+      "properties": {
+        "host": { "type": "string" },
+        "port": { "$ref": "#/definitions/port" },
+        "managementPort": { "$ref": "#/definitions/port" },
+        "enabled": { "type": "boolean" },
+        "admin": {
+          "type": "object",
+          "additionalProperties": true,
+          "required": ["usernameKey", "passwordKey"],
+          "properties": {
+            "existingSecret": { "type": "string" },
+            "usernameKey": { "$ref": "#/definitions/secretKey" },
+            "passwordKey": { "$ref": "#/definitions/secretKey" }
+          }
+        },
+        "provisioning": {
+          "type": "object",
+          "additionalProperties": true,
+          "required": ["enabled", "activeDeadlineSeconds", "image"],
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "activeDeadlineSeconds": { "type": "integer", "minimum": 1 },
+            "image": { "$ref": "#/definitions/chartImage" }
+          }
+        },
+        "image": { "$ref": "#/definitions/infrastructureImage" },
+        "persistence": { "$ref": "#/definitions/persistence" },
+        "resources": { "$ref": "#/definitions/resources" }
+      }
+    },
+    "packRegistry": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["approvedPublicHosts", "allowUnverifiedDirectRemoteInstalls"],
+      "properties": {
+        "standardIndexRef": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "approvedPublicHosts": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^(?:\\[[0-9A-Fa-f:.]+\\]|[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?)(?::[0-9]{1,5})?$"
+          }
+        },
+        "allowUnverifiedDirectRemoteInstalls": { "type": "boolean" }
+      }
+    },
+    "sharedStorage": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["packs", "runtimeEnvs", "artifacts"],
+      "properties": {
+        "packs": {
+          "description": "Shared pack storage. Multi-node installations need ReadWriteMany and an RWX-capable StorageClass. Longhorn RWX requires an NFSv4 client on every schedulable node. Bound PVC access modes are immutable; back up and migrate data to a new claim.",
+          "allOf": [{ "$ref": "#/definitions/persistence" }]
+        },
+        "runtimeEnvs": {
+          "description": "Shared runtime storage. Multi-node installations need ReadWriteMany and an RWX-capable StorageClass. Longhorn RWX requires an NFSv4 client on every schedulable node. Bound PVC access modes are immutable; back up and migrate data to a new claim.",
+          "allOf": [{ "$ref": "#/definitions/persistence" }]
+        },
+        "artifacts": {
+          "description": "Shared artifact storage. Multi-node installations need ReadWriteMany and an RWX-capable StorageClass. Longhorn RWX requires an NFSv4 client on every schedulable node. Bound PVC access modes are immutable; back up and migrate data to a new claim.",
+          "allOf": [{ "$ref": "#/definitions/persistence" }]
+        }
+      }
+    },
+    "images": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "api",
+        "executor",
+        "notifier",
+        "supervisor",
+        "mcp",
+        "web",
+        "migrations",
+        "initUser",
+        "initPacks",
+        "agent"
+      ],
+      "properties": {
+        "api": { "$ref": "#/definitions/chartImage" },
+        "executor": { "$ref": "#/definitions/chartImage" },
+        "notifier": { "$ref": "#/definitions/chartImage" },
+        "supervisor": { "$ref": "#/definitions/chartImage" },
+        "mcp": { "$ref": "#/definitions/chartImage" },
+        "web": { "$ref": "#/definitions/chartImage" },
+        "migrations": { "$ref": "#/definitions/chartImage" },
+        "initUser": { "$ref": "#/definitions/chartImage" },
+        "initPacks": { "$ref": "#/definitions/chartImage" },
+        "agent": { "$ref": "#/definitions/chartImage" }
+      }
+    },
+    "jobs": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["migrations", "initUser", "initPacks"],
+      "properties": {
+        "migrations": { "$ref": "#/definitions/job" },
+        "initUser": { "$ref": "#/definitions/job" },
+        "initPacks": { "$ref": "#/definitions/job" }
+      }
+    },
+    "api": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["replicaCount", "service"],
+      "properties": {
+        "replicaCount": { "$ref": "#/definitions/replicas" },
+        "service": { "$ref": "#/definitions/service" },
+        "resources": { "$ref": "#/definitions/resources" }
+      }
+    },
+    "executor": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["replicaCount"],
+      "properties": {
+        "replicaCount": { "$ref": "#/definitions/replicas" },
+        "resources": { "$ref": "#/definitions/resources" }
+      }
+    },
+    "supervisor": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["replicaCount"],
+      "properties": {
+        "replicaCount": { "$ref": "#/definitions/replicas" },
+        "resources": { "$ref": "#/definitions/resources" }
+      }
+    },
+    "notifier": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["replicaCount", "service"],
+      "properties": {
+        "replicaCount": { "$ref": "#/definitions/replicas" },
+        "service": { "$ref": "#/definitions/service" },
+        "resources": { "$ref": "#/definitions/resources" }
+      }
+    },
+    "mcp": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["enabled", "replicaCount", "service", "auth"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "replicaCount": { "$ref": "#/definitions/replicas" },
+        "service": { "$ref": "#/definitions/service" },
+        "auth": {
+          "type": "object",
+          "additionalProperties": true,
+          "required": ["useBootstrapTestUser", "loginKey", "passwordKey"],
+          "properties": {
+            "useBootstrapTestUser": { "type": "boolean" },
+            "existingSecret": { "type": "string" },
+            "loginKey": { "$ref": "#/definitions/secretKey" },
+            "passwordKey": { "$ref": "#/definitions/secretKey" }
+          }
+        },
+        "resources": { "$ref": "#/definitions/resources" }
+      }
+    },
+    "web": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["replicaCount", "service", "config", "ingress"],
+      "properties": {
+        "replicaCount": { "$ref": "#/definitions/replicas" },
+        "service": { "$ref": "#/definitions/service" },
+        "config": {
+          "type": "object",
+          "additionalProperties": true,
+          "required": ["environment"],
+          "properties": {
+            "environment": { "type": "string", "minLength": 1 },
+            "apiUrl": { "type": "string" },
+            "wsUrl": { "type": "string" }
+          }
+        },
+        "resources": { "$ref": "#/definitions/resources" },
+        "ingress": {
+          "type": "object",
+          "additionalProperties": true,
+          "required": ["enabled"],
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "className": { "type": "string" },
+            "annotations": { "$ref": "#/definitions/stringMap" },
+            "hosts": {
+              "type": "array",
+              "items": { "$ref": "#/definitions/ingressHost" }
+            },
+            "tls": {
+              "type": "array",
+              "items": { "$ref": "#/definitions/ingressTls" }
+            }
+          }
+        }
+      }
+    },
+    "actionWorkers": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/actionWorker" }
+    },
+    "sensorWorkers": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/sensorWorker" }
+    }
+  },
+  "definitions": {
+    "port": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 65535
+    },
+    "replicas": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "secretKey": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9._-]+$"
+    },
+    "pullPolicy": {
+      "type": "string",
+      "enum": ["Always", "IfNotPresent", "Never"]
+    },
+    "localObjectReference": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 }
+      }
+    },
+    "chartImage": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["repository", "pullPolicy"],
+      "properties": {
+        "repository": { "type": "string", "minLength": 1 },
+        "tag": { "type": "string" },
+        "pullPolicy": { "$ref": "#/definitions/pullPolicy" }
+      }
+    },
+    "infrastructureImage": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["repository", "tag"],
+      "properties": {
+        "repository": { "type": "string", "minLength": 1 },
+        "tag": { "type": "string", "minLength": 1 }
+      }
+    },
+    "quantity": {
+      "oneOf": [
+        { "type": "string", "minLength": 1 },
+        { "type": "number", "minimum": 0 }
+      ]
+    },
+    "quantityMap": {
+      "type": "object",
+      "additionalProperties": true,
+      "propertyNames": { "minLength": 1 },
+      "patternProperties": {
+        "^.+$": { "$ref": "#/definitions/quantity" }
+      }
+    },
+    "resources": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "limits": { "$ref": "#/definitions/quantityMap" },
+        "requests": { "$ref": "#/definitions/quantityMap" },
+        "claims": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["name"],
+            "properties": {
+              "name": { "type": "string", "minLength": 1 },
+              "request": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      }
+    },
+    "persistence": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["accessModes", "size"],
+      "properties": {
+        "accessModes": {
+          "type": "array",
+          "description": "Kubernetes access modes requested by the claim.",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": ["ReadWriteOnce", "ReadOnlyMany", "ReadWriteMany", "ReadWriteOncePod"]
+          }
+        },
+        "size": {
+          "type": "string",
+          "minLength": 1
+        },
+        "storageClassName": {
+          "type": "string",
+          "description": "StorageClass for this claim."
+        }
+      }
+    },
+    "job": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["ttlSecondsAfterFinished"],
+      "properties": {
+        "ttlSecondsAfterFinished": { "type": "integer", "minimum": 0 },
+        "resources": { "$ref": "#/definitions/resources" }
+      }
+    },
+    "service": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["type", "port"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["ClusterIP", "NodePort", "LoadBalancer", "ExternalName"]
+        },
+        "port": { "$ref": "#/definitions/port" }
+      }
+    },
+    "stringMap": {
+      "type": "object",
+      "additionalProperties": true,
+      "propertyNames": { "minLength": 1 },
+      "patternProperties": {
+        "^.+$": { "type": "string" }
+      }
+    },
+    "ingressHost": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["host", "paths"],
+      "properties": {
+        "host": { "type": "string" },
+        "paths": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/definitions/ingressPath" }
+        }
+      }
+    },
+    "ingressPath": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["path", "pathType"],
+      "properties": {
+        "path": { "type": "string", "pattern": "^/" },
+        "pathType": {
+          "type": "string",
+          "enum": ["Exact", "Prefix", "ImplementationSpecific"]
+        }
+      }
+    },
+    "ingressTls": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "hosts": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "secretName": { "type": "string", "minLength": 1 }
+      }
+    },
+    "workerName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 63,
+      "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9_-]*[A-Za-z0-9])?$"
+    },
+    "runtimeList": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "envVar": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["name"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+        },
+        "value": { "type": ["string", "number", "integer", "boolean"] },
+        "valueFrom": { "$ref": "#/definitions/envVarSource" }
+      },
+      "not": {
+        "required": ["value", "valueFrom"]
+      }
+    },
+    "envVarSource": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "fieldRef": { "$ref": "#/definitions/objectFieldSelector" },
+        "resourceFieldRef": { "$ref": "#/definitions/resourceFieldSelector" },
+        "configMapKeyRef": { "$ref": "#/definitions/keySelector" },
+        "secretKeyRef": { "$ref": "#/definitions/keySelector" }
+      }
+    },
+    "keySelector": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["name", "key"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "key": { "$ref": "#/definitions/secretKey" },
+        "optional": { "type": "boolean" }
+      }
+    },
+    "objectFieldSelector": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["fieldPath"],
+      "properties": {
+        "apiVersion": { "type": "string", "minLength": 1 },
+        "fieldPath": { "type": "string", "minLength": 1 }
+      }
+    },
+    "resourceFieldSelector": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["resource"],
+      "properties": {
+        "containerName": { "type": "string", "minLength": 1 },
+        "resource": { "type": "string", "minLength": 1 },
+        "divisor": { "$ref": "#/definitions/quantity" }
+      }
+    },
+    "toleration": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "key": { "type": "string" },
+        "operator": { "type": "string", "enum": ["Exists", "Equal"] },
+        "value": { "type": "string" },
+        "effect": {
+          "type": "string",
+          "enum": ["NoSchedule", "PreferNoSchedule", "NoExecute"]
+        },
+        "tolerationSeconds": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "workerBaseProperties": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "name": { "$ref": "#/definitions/workerName" },
+        "image": { "type": "string", "minLength": 1 },
+        "replicas": { "type": "integer", "minimum": 1 },
+        "runtimes": { "$ref": "#/definitions/runtimeList" },
+        "resources": { "$ref": "#/definitions/resources" },
+        "env": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/envVar" }
+        },
+        "imagePullPolicy": { "$ref": "#/definitions/pullPolicy" },
+        "logLevel": { "type": "string", "minLength": 1 },
+        "runtimeClassName": { "type": "string", "minLength": 1 },
+        "nodeSelector": { "$ref": "#/definitions/stringMap" },
+        "tolerations": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/toleration" }
+        },
+        "stopGracePeriod": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "actionWorker": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["name", "image"],
+      "allOf": [
+        { "$ref": "#/definitions/workerBaseProperties" }
+      ]
+    },
+    "sensorWorker": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["name", "image"],
+      "allOf": [
+        { "$ref": "#/definitions/workerBaseProperties" },
+        {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "notifierWsUrl": { "type": "string" },
+            "allowInsecureNotifierWs": { "type": "boolean" }
+          }
+        }
+      ]
+    }
+  }
+}

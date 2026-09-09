@@ -1,6 +1,6 @@
 1. Set `global.imageRegistry`, `global.imageNamespace`, and `global.imageTag` so the chart pulls the images published by the GitHub workflow.
 2. Set `web.config.apiUrl` and `web.config.wsUrl` to browser-reachable endpoints before exposing the web UI.
-3. The shared `packs`, `runtime_envs`, and `artifacts` PVCs default to `ReadWriteMany`; your cluster storage class must support RWX or you need to override those claims.
+3. The shared `packs`, `runtime-envs`, and `artifacts` PVCs default to `ReadWriteOnce`. If Attune pods can run on different nodes, configure all three as `ReadWriteMany` with an RWX-capable storage class. Bundled PostgreSQL and RabbitMQ remain `ReadWriteOnce`.
 {{- if .Values.actionWorkers }}
 
 Action worker pools:
