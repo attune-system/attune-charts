@@ -57,7 +57,8 @@ helm upgrade --install attune attune/attune \
   --create-namespace \
   --values values.yaml \
   --wait \
-  --wait-for-jobs
+  --wait-for-jobs \
+  --timeout 20m
 ```
 
 Forward the web Service locally, sign in at `http://127.0.0.1:8080`, and change

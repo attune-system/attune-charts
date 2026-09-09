@@ -77,6 +77,48 @@ helm template verify "$root_dir/charts/attune" \
 docker run --rm -i ghcr.io/yannh/kubeconform:v0.7.0 \
   -strict -summary < "$render_dir/attune-cnpg.yaml"
 
+notifier_port="$({
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc 'select(.kind == "ConfigMap") | .data."config.yaml" | from_yaml | .notifier.port' - \
+    < "$render_dir/attune-cnpg.yaml"
+})"
+if [[ "$notifier_port" != 8081 ]]; then
+  printf 'rendered application config is missing the notifier listener\n' >&2
+  exit 1
+fi
+
+migration_database_url_override_count="$({
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc '[select(.kind == "Job" and .metadata.labels."app.kubernetes.io/component" == "migrations") | .spec.template.spec.containers[] | select(.name == "migrations") | .env[] | select(.name == "ATTUNE__DATABASE__URL" and .value == "")] | length' - \
+    < "$render_dir/attune-cnpg.yaml"
+})"
+if [[ "$migration_database_url_override_count" -ne 1 ]]; then
+  printf 'migration Job does not force the 0.5.3 index seeder to use DB_* connection fields\n' >&2
+  exit 1
+fi
+
+rabbitmq_probe="$render_dir/rabbitmq-amqp-probe.py"
+docker run --rm -i mikefarah/yq:4.47.2 \
+  eval-all --no-doc 'select(.kind == "Deployment" and .spec.template.metadata.labels."app.kubernetes.io/component" == "api") | .spec.template.spec.initContainers[] | select(.name == "wait-for-rabbitmq-credentials") | .args[0]' - \
+  < "$render_dir/attune-cnpg.yaml" > "$rabbitmq_probe"
+rabbitmq_wait_script="$(< "$rabbitmq_probe")"
+if [[ "$rabbitmq_wait_script" != *'AMQP'* || "$rabbitmq_wait_script" == *'/api/whoami'* ]]; then
+  printf 'RabbitMQ credential wait does not authenticate over AMQP\n' >&2
+  exit 1
+fi
+python3 -m py_compile "$rabbitmq_probe"
+python3 "$root_dir/scripts/test-rabbitmq-amqp-probe.py" "$rabbitmq_probe"
+
+rabbitmq_provisioning_script="$({
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc 'select(.kind == "Job" and .metadata.labels."app.kubernetes.io/component" == "provision-rabbitmq") | .spec.template.spec.containers[] | select(.name == "provision-rabbitmq") | .args[0]' - \
+    < "$render_dir/attune-cnpg.yaml"
+})"
+if [[ "$rabbitmq_provisioning_script" == *'/api/whoami'* ]]; then
+  printf 'RabbitMQ provisioner verifies an untagged service user through the management API\n' >&2
+  exit 1
+fi
+
 shared_pvc_configuration="$({
   docker run --rm -i mikefarah/yq:4.47.2 \
     eval-all --no-doc 'select(.kind == "PersistentVolumeClaim") | [.metadata.name, .spec.accessModes[0], .spec.storageClassName] | @tsv' - \
@@ -773,6 +815,27 @@ pre_upgrade_hook_count="$({
 
 if [[ "$pre_upgrade_hook_count" -ne 4 ]]; then
   printf 'expected four pre-upgrade Jobs, found %d\n' "$pre_upgrade_hook_count" >&2
+  exit 1
+fi
+
+pre_upgrade_hook_names="$({
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc '[select(.kind == "Job" and .metadata.annotations."helm.sh/hook" == "pre-upgrade") | .metadata.name] | sort | join(",")' - \
+    < "$render_dir/attune-upgrade.yaml"
+})"
+expected_hook_names='verify-attune-init-packs,verify-attune-init-user,verify-attune-migrations,verify-attune-provision-postgresql'
+if [[ "$pre_upgrade_hook_names" != "$expected_hook_names" ]]; then
+  printf 'pre-upgrade Jobs do not use stable retry-safe names: %s\n' "$pre_upgrade_hook_names" >&2
+  exit 1
+fi
+
+bounded_pre_upgrade_hook_count="$({
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc '[select(.kind == "Job" and .metadata.annotations."helm.sh/hook" == "pre-upgrade" and .spec.activeDeadlineSeconds == 600)] | length' - \
+    < "$render_dir/attune-upgrade.yaml"
+})"
+if [[ "$bounded_pre_upgrade_hook_count" -ne 4 ]]; then
+  printf 'expected every pre-upgrade Job to have a 600-second deadline\n' >&2
   exit 1
 fi
 

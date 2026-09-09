@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ printf "%s-migrations-%d" (include "attune.fullname" .) .Release.Revision | trunc 63 | trimSuffix "-" | quote }}
+  name: {{ ternary (printf "%s-migrations" (include "attune.fullname" .)) (printf "%s-migrations-%d" (include "attune.fullname" .) .Release.Revision) .Release.IsUpgrade | trunc 63 | trimSuffix "-" | quote }}
   labels:
     {{- include "attune.labels" . | nindent 4 }}
     app.kubernetes.io/component: migrations
@@ -12,6 +12,7 @@ metadata:
     helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
   {{- end }}
 spec:
+  activeDeadlineSeconds: {{ .Values.jobs.migrations.activeDeadlineSeconds | default 600 }}
   ttlSecondsAfterFinished: {{ .Values.jobs.migrations.ttlSecondsAfterFinished }}
   template:
     metadata:
@@ -35,6 +36,10 @@ spec:
           env:
             - name: MIGRATIONS_DIR
               value: /migrations
+            # The 0.5.3 index seeder passes connection URLs through PGDATABASE,
+            # which libpq treats as a database name. Use its explicit DB_* path.
+            - name: ATTUNE__DATABASE__URL
+              value: ""
             - name: ATTUNE_STANDARD_PACK_INDEX_REF
               value: {{ .Values.packRegistry.standardIndexRef | default "b50e4e6d5003717505c7b894f14b8049de32c735" | quote }}
           resources:
@@ -43,7 +48,7 @@ spec:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ printf "%s-init-user-%d" (include "attune.fullname" .) .Release.Revision | trunc 63 | trimSuffix "-" | quote }}
+  name: {{ ternary (printf "%s-init-user" (include "attune.fullname" .)) (printf "%s-init-user-%d" (include "attune.fullname" .) .Release.Revision) .Release.IsUpgrade | trunc 63 | trimSuffix "-" | quote }}
   labels:
     {{- include "attune.labels" . | nindent 4 }}
     app.kubernetes.io/component: init-user
@@ -54,6 +59,7 @@ metadata:
     helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
   {{- end }}
 spec:
+  activeDeadlineSeconds: {{ .Values.jobs.initUser.activeDeadlineSeconds | default 600 }}
   ttlSecondsAfterFinished: {{ .Values.jobs.initUser.ttlSecondsAfterFinished }}
   template:
     metadata:
@@ -86,7 +92,7 @@ spec:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ printf "%s-init-packs-%d" (include "attune.fullname" .) .Release.Revision | trunc 63 | trimSuffix "-" | quote }}
+  name: {{ ternary (printf "%s-init-packs" (include "attune.fullname" .)) (printf "%s-init-packs-%d" (include "attune.fullname" .) .Release.Revision) .Release.IsUpgrade | trunc 63 | trimSuffix "-" | quote }}
   labels:
     {{- include "attune.labels" . | nindent 4 }}
     app.kubernetes.io/component: init-packs
@@ -97,6 +103,7 @@ metadata:
     helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
   {{- end }}
 spec:
+  activeDeadlineSeconds: {{ .Values.jobs.initPacks.activeDeadlineSeconds | default 600 }}
   ttlSecondsAfterFinished: {{ .Values.jobs.initPacks.ttlSecondsAfterFinished }}
   template:
     metadata:

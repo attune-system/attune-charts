@@ -130,24 +130,99 @@ app.kubernetes.io/component: {{ .component | quote }}
   command: ["python3", "-c"]
   args:
     - |
-      import base64
       import os
+      import socket
+      import struct
       import time
-      import urllib.error
-      import urllib.request
 
-      url = "http://{{ include "attune.rabbitmqServiceName" . }}:{{ .Values.rabbitmq.managementPort }}/api/whoami"
+      def read_exact(connection, size):
+          data = b""
+          while len(data) < size:
+              chunk = connection.recv(size - len(data))
+              if not chunk:
+                  raise ConnectionError("RabbitMQ closed the connection")
+              data += chunk
+          return data
+
+      def read_frame(connection):
+          frame_type, channel, size = struct.unpack(">BHI", read_exact(connection, 7))
+          payload = read_exact(connection, size)
+          if read_exact(connection, 1) != b"\xce" or frame_type != 1 or channel != 0:
+              raise ConnectionError("unexpected AMQP frame")
+          return payload
+
+      def method_frame(payload):
+          return b"\x01" + struct.pack(">HI", 0, len(payload)) + payload + b"\xce"
+
+      def short_string(value):
+          return bytes([len(value)]) + value
+
+      def long_string(value):
+          return struct.pack(">I", len(value)) + value
+
+      def authenticate():
+          with socket.create_connection(
+              (os.environ["RABBITMQ_HOST"], int(os.environ["RABBITMQ_PORT"])),
+              timeout=10,
+          ) as connection:
+              connection.sendall(b"AMQP\x00\x00\x09\x01")
+              start = read_frame(connection)
+              if struct.unpack(">HH", start[:4]) != (10, 10):
+                  raise ConnectionError("RabbitMQ did not send connection.start")
+
+              username = os.environ["RABBITMQ_USER"].encode()
+              password = os.environ["RABBITMQ_PASSWORD"].encode()
+              response = b"\x00" + username + b"\x00" + password
+              start_ok = (
+                  struct.pack(">HHI", 10, 11, 0)
+                  + short_string(b"PLAIN")
+                  + long_string(response)
+                  + short_string(b"en_US")
+              )
+              connection.sendall(method_frame(start_ok))
+
+              tune = read_frame(connection)
+              if struct.unpack(">HH", tune[:4]) != (10, 30):
+                  raise PermissionError("RabbitMQ rejected the service credentials")
+              channel_max, frame_max, heartbeat = struct.unpack(">HIH", tune[4:12])
+              tune_ok = struct.pack(
+                  ">HHHIH", 10, 31, channel_max, frame_max, heartbeat
+              )
+              connection.sendall(method_frame(tune_ok))
+
+              connection_open = (
+                  struct.pack(">HH", 10, 40)
+                  + short_string(b"/")
+                  + short_string(b"")
+                  + b"\x00"
+              )
+              connection.sendall(method_frame(connection_open))
+              open_ok = read_frame(connection)
+              if struct.unpack(">HH", open_ok[:4]) != (10, 41):
+                  raise PermissionError("RabbitMQ rejected access to the vhost")
+
+              connection_close = (
+                  struct.pack(">HHH", 10, 50, 200)
+                  + short_string(b"")
+                  + struct.pack(">HH", 0, 0)
+              )
+              connection.sendall(method_frame(connection_close))
+              close_ok = read_frame(connection)
+              if struct.unpack(">HH", close_ok[:4]) != (10, 51):
+                  raise ConnectionError("RabbitMQ did not close cleanly")
+
       while True:
-          token = base64.b64encode(
-              f"{os.environ['RABBITMQ_USER']}:{os.environ['RABBITMQ_PASSWORD']}".encode()
-          ).decode()
-          request = urllib.request.Request(url, headers={"Authorization": f"Basic {token}"})
           try:
-              with urllib.request.urlopen(request, timeout=10):
-                  break
-          except (OSError, urllib.error.HTTPError):
+              authenticate()
+              break
+          except (OSError, struct.error, ValueError):
               print("waiting for provisioned RabbitMQ service account", flush=True)
               time.sleep(2)
+  env:
+    - name: RABBITMQ_HOST
+      value: {{ include "attune.rabbitmqServiceName" . | quote }}
+    - name: RABBITMQ_PORT
+      value: {{ .Values.rabbitmq.port | quote }}
   envFrom:
     - secretRef:
         name: {{ include "attune.secretName" . | quote }}

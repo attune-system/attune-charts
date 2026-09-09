@@ -179,12 +179,15 @@ images:
 
 jobs:
   migrations:
+    activeDeadlineSeconds: 600
     ttlSecondsAfterFinished: 300
     resources: {}
   initUser:
+    activeDeadlineSeconds: 600
     ttlSecondsAfterFinished: 300
     resources: {}
   initPacks:
+    activeDeadlineSeconds: 600
     ttlSecondsAfterFinished: 300
     resources: {}
 

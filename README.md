@@ -5,7 +5,7 @@ sites.
 
 | Chart | Version | Purpose |
 | --- | --- | --- |
-| `attune` | `0.6.2` | Attune services, workers, PostgreSQL, and RabbitMQ |
+| `attune` | `0.6.3` | Attune services, workers, PostgreSQL, and RabbitMQ |
 | `attune-site` | `0.1.5` | `attunedev.org` and its inquiry form |
 | `attune-docs-site` | `0.1.3` | `docs.attunedev.org` |
 
@@ -177,7 +177,8 @@ helm upgrade --install attune attune/attune \
   --namespace attune \
   --values attune-setup/values.yaml \
   --wait \
-  --wait-for-jobs
+  --wait-for-jobs \
+  --timeout 20m
 ```
 
 The platform chart pulls Attune `0.5.3` images from

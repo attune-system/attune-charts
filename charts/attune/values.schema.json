@@ -501,6 +501,7 @@
       "additionalProperties": true,
       "required": ["ttlSecondsAfterFinished"],
       "properties": {
+        "activeDeadlineSeconds": { "type": "integer", "minimum": 1 },
         "ttlSecondsAfterFinished": { "type": "integer", "minimum": 0 },
         "resources": { "$ref": "#/definitions/resources" }
       }
