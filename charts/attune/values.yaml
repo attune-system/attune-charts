@@ -4,7 +4,7 @@ fullnameOverride: ""
 global:
   imageRegistry: ghcr.io
   imageNamespace: attune-system
-  imageTag: "0.5.3"
+  imageTag: "0.6.0"
   imagePullSecrets: []
 
 security:
@@ -116,6 +116,53 @@ packRegistry:
   # Direct remote sources bypass registry-supplied checksums.
   allowUnverifiedDirectRemoteInstalls: false
 
+artifacts:
+  # Per-stream in-memory runtime-log loss window. See the chart README for
+  # worker and sensor memory-request sizing.
+  logSegmentMaxBytes: 65536
+  flushIntervalMs: 500
+
+storage:
+  # One durable storage mode applies to the whole release.
+  mode: sharedVolume
+  object:
+    provider: s3
+    bucket: ""
+    prefix: ""
+    region: ""
+    endpoint: ""
+    kmsKey: ""
+    # Set true only for the first sharedVolume-to-object upgrade. Helm refuses
+    # that cutover when legacy claims exist unless this is explicitly enabled.
+    migrateFromSharedVolume: false
+  local:
+    # Worker cache volumes use bounded emptyDir by default. Generic ephemeral
+    # volumes create one dynamically provisioned RWO claim for each Pod.
+    mode: emptyDir
+    # fsGroup makes local writable volumes work without forcing arbitrary
+    # runtime images to use a particular UID.
+    podSecurityContext:
+      fsGroup: 1000
+      fsGroupChangePolicy: OnRootMismatch
+    packs:
+      sizeLimit: 2Gi
+      storageClassName: ""
+    runtimeEnvs:
+      sizeLimit: 10Gi
+      storageClassName: ""
+    artifactStaging:
+      sizeLimit: 20Gi
+
+serviceAccounts:
+  api:
+    create: true
+    name: ""
+    annotations: {}
+  supervisor:
+    create: true
+    name: ""
+    annotations: {}
+
 sharedStorage:
   # These claims are mounted by several workloads. Use ReadWriteMany with an
   # RWX-capable StorageClass when pods can run on different nodes.
@@ -188,6 +235,10 @@ jobs:
     resources: {}
   initPacks:
     activeDeadlineSeconds: 600
+    ttlSecondsAfterFinished: 300
+    resources: {}
+  storageMigration:
+    activeDeadlineSeconds: 3600
     ttlSecondsAfterFinished: 300
     resources: {}
 

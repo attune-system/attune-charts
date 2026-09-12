@@ -130,6 +130,343 @@ if [[ "$shared_pvc_configuration" != "$expected_shared_pvc_configuration" ]]; th
   exit 1
 fi
 
+helm lint --strict "$root_dir/charts/attune" \
+  --values "$root_dir/charts/attune/ci/shared-volume-values.yaml"
+helm template verify "$root_dir/charts/attune" \
+  --namespace verify \
+  --values "$root_dir/charts/attune/ci/shared-volume-values.yaml" \
+  > "$render_dir/attune-shared-volume.yaml"
+
+helm lint --strict "$root_dir/charts/attune" \
+  --values "$root_dir/charts/attune/ci/object-values.yaml"
+helm template verify "$root_dir/charts/attune" \
+  --namespace verify \
+  --values "$root_dir/charts/attune/ci/object-values.yaml" \
+  > "$render_dir/attune-object.yaml"
+helm template verify "$root_dir/charts/attune" \
+  --namespace verify \
+  --is-upgrade \
+  --values "$root_dir/charts/attune/ci/object-values.yaml" \
+  > "$render_dir/attune-object-upgrade.yaml"
+
+helm lint --strict "$root_dir/charts/attune" \
+  --values "$root_dir/charts/attune/ci/object-ephemeral-values.yaml"
+helm template verify "$root_dir/charts/attune" \
+  --namespace verify \
+  --values "$root_dir/charts/attune/ci/object-ephemeral-values.yaml" \
+  > "$render_dir/attune-object-ephemeral.yaml"
+
+docker run --rm -i ghcr.io/yannh/kubeconform:v0.7.0 \
+  -strict -summary < "$render_dir/attune-shared-volume.yaml"
+docker run --rm -i ghcr.io/yannh/kubeconform:v0.7.0 \
+  -strict -summary < "$render_dir/attune-object.yaml"
+docker run --rm -i ghcr.io/yannh/kubeconform:v0.7.0 \
+  -strict -summary < "$render_dir/attune-object-upgrade.yaml"
+docker run --rm -i ghcr.io/yannh/kubeconform:v0.7.0 \
+  -strict -summary < "$render_dir/attune-object-ephemeral.yaml"
+
+default_worker_empty_dir_count="$({
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc '[select(.kind == "Deployment" and (.metadata.labels."app.kubernetes.io/component" | test("^(action|sensor)-worker-"))) | .spec.template.spec.volumes[] | select((.name == "packs" or .name == "runtime-envs") and has("emptyDir") and .emptyDir.sizeLimit != null)] | length' - \
+    < "$render_dir/attune-object.yaml"
+})"
+if [[ "$default_worker_empty_dir_count" -ne 4 ]]; then
+  printf 'default object mode rendered %s bounded emptyDir worker caches, expected 4\n' "$default_worker_empty_dir_count" >&2
+  exit 1
+fi
+
+default_ephemeral_claim_count="$({
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc '[select(.kind == "Deployment") | .spec.template.spec.volumes[]? | select(has("ephemeral"))] | length' - \
+    < "$render_dir/attune-object.yaml"
+})"
+if [[ "$default_ephemeral_claim_count" -ne 0 ]]; then
+  printf 'default object mode rendered generic ephemeral claims\n' >&2
+  exit 1
+fi
+
+ephemeral_claim_count="$({
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc '[select(.kind == "Deployment") | .spec.template.spec.volumes[]? | select(has("ephemeral"))] | length' - \
+    < "$render_dir/attune-object-ephemeral.yaml"
+})"
+if [[ "$ephemeral_claim_count" -ne 4 ]]; then
+  printf 'object generic ephemeral mode rendered %s inline claims, expected 4\n' "$ephemeral_claim_count" >&2
+  exit 1
+fi
+
+ephemeral_cache_claims="$({
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc 'select(.kind == "Deployment" and (.metadata.labels."app.kubernetes.io/component" | test("^(action|sensor)-worker-"))) as $deployment | $deployment.spec.template.spec.volumes[] | select(.name == "packs" or .name == "runtime-envs") | [$deployment.metadata.labels."app.kubernetes.io/component", .name, (.ephemeral.volumeClaimTemplate.spec.accessModes | join(",")), .ephemeral.volumeClaimTemplate.spec.resources.requests.storage, .ephemeral.volumeClaimTemplate.spec.storageClassName] | @tsv' - \
+    < "$render_dir/attune-object-ephemeral.yaml"
+})"
+expected_ephemeral_cache_claims=$'action-worker-full\tpacks\tReadWriteOnce\t2Gi\tverify-rwo-storage\naction-worker-full\truntime-envs\tReadWriteOnce\t10Gi\tverify-rwo-storage\nsensor-worker-default\tpacks\tReadWriteOnce\t2Gi\tverify-rwo-storage\nsensor-worker-default\truntime-envs\tReadWriteOnce\t10Gi\tverify-rwo-storage'
+if [[ "$ephemeral_cache_claims" != "$expected_ephemeral_cache_claims" ]]; then
+  printf 'object generic ephemeral cache claims differ from the expected per-Pod RWO claims:\n%s\n' "$ephemeral_cache_claims" >&2
+  exit 1
+fi
+
+ephemeral_worker_kinds="$({
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc 'select(.metadata.labels."app.kubernetes.io/component" | test("^(action|sensor)-worker-")) | [.metadata.name, .kind] | @tsv' - \
+    < "$render_dir/attune-object-ephemeral.yaml"
+})"
+expected_ephemeral_worker_kinds=$'verify-attune-action-worker-full\tDeployment\tverify-attune-sensor-worker-default\tDeployment'
+if [[ "$ephemeral_worker_kinds" != "$expected_ephemeral_worker_kinds" ]]; then
+  printf 'generic ephemeral cache mode changed worker workload kinds:\n%s\n' "$ephemeral_worker_kinds" >&2
+  exit 1
+fi
+
+default_worker_identity="$({
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc 'select(.kind == "Deployment" and (.metadata.labels."app.kubernetes.io/component" | test("^(action|sensor)-worker-"))) | [.metadata.name, .metadata.labels, .spec.selector, .spec.template.metadata, .spec.template.spec.serviceAccountName] | @json' - \
+    < "$render_dir/attune-object.yaml"
+})"
+ephemeral_worker_identity="$({
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc 'select(.kind == "Deployment" and (.metadata.labels."app.kubernetes.io/component" | test("^(action|sensor)-worker-"))) | [.metadata.name, .metadata.labels, .spec.selector, .spec.template.metadata, .spec.template.spec.serviceAccountName] | @json' - \
+    < "$render_dir/attune-object-ephemeral.yaml"
+})"
+if [[ "$ephemeral_worker_identity" != "$default_worker_identity" ]]; then
+  printf 'generic ephemeral cache mode changed worker identity\n' >&2
+  exit 1
+fi
+
+ephemeral_standalone_cache_pvc_count="$({
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc '[select(.kind == "PersistentVolumeClaim" and (.metadata.name | test("(packs|runtime-envs)")))] | length' - \
+    < "$render_dir/attune-object-ephemeral.yaml"
+})"
+if [[ "$ephemeral_standalone_cache_pvc_count" -ne 0 ]]; then
+  printf 'generic ephemeral cache mode rendered a standalone cache PVC\n' >&2
+  exit 1
+fi
+
+if helm template verify "$root_dir/charts/attune" \
+  --set security.existingSecret=verify-runtime \
+  --set storage.local.mode=sharedVolume \
+  > /dev/null 2>&1; then
+  printf 'chart schema accepted a shared local cache mode\n' >&2
+  exit 1
+fi
+
+if helm template verify "$root_dir/charts/attune" \
+  --set security.existingSecret=verify-runtime \
+  --set storage.local.mode=genericEphemeralVolume \
+  > /dev/null 2>&1; then
+  printf 'chart schema accepted generic ephemeral caches with shared-volume storage\n' >&2
+  exit 1
+fi
+
+object_shared_claim_count="$({
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc '[select(.kind == "PersistentVolumeClaim" and (.metadata.name | test("-(packs|runtime-envs|artifacts)$")))] | length' - \
+    < "$render_dir/attune-object.yaml"
+})"
+if [[ "$object_shared_claim_count" -ne 0 ]]; then
+  printf 'object mode rendered shared pack, runtime, or artifact claims\n' >&2
+  exit 1
+fi
+
+shared_claim_keep_count="$({
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc '[select(.kind == "PersistentVolumeClaim" and (.metadata.name | test("-(packs|runtime-envs|artifacts)$")) and .metadata.annotations."helm.sh/resource-policy" == "keep")] | length' - \
+    < "$render_dir/attune-shared-volume.yaml"
+})"
+if [[ "$shared_claim_keep_count" -ne 3 ]]; then
+  printf 'expected all shared storage claims to carry the Helm keep policy\n' >&2
+  exit 1
+fi
+
+retained_claim_lookup_count="$(grep -c 'lookup "v1" "PersistentVolumeClaim"' "$root_dir/charts/attune/templates/pvc.yaml")"
+if [[ "$retained_claim_lookup_count" -ne 3 ]]; then
+  printf 'object-mode transitions do not preserve all live shared claims in the upgraded manifest\n' >&2
+  exit 1
+fi
+
+object_local_security_count="$({
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc '[select((.kind == "Deployment" or .kind == "Job") and .spec.template.spec.securityContext.fsGroup == 1000 and .spec.template.spec.securityContext.fsGroupChangePolicy == "OnRootMismatch")] | length' - \
+    < "$render_dir/attune-object.yaml"
+})"
+if [[ "$object_local_security_count" -ne 6 ]]; then
+  printf 'expected six object-mode Pods to get writable local-volume group ownership, found %s\n' "$object_local_security_count" >&2
+  exit 1
+fi
+
+shared_local_security_count="$({
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc '[select(.kind == "Deployment" or .kind == "Job") | select(.spec.template.spec.securityContext.fsGroup != null)] | length' - \
+    < "$render_dir/attune-shared-volume.yaml"
+})"
+if [[ "$shared_local_security_count" -ne 0 ]]; then
+  printf 'local-volume group ownership escaped object mode\n' >&2
+  exit 1
+fi
+
+custom_local_security_count="$({
+  helm template verify "$root_dir/charts/attune" \
+    --namespace verify \
+    --values "$root_dir/charts/attune/ci/object-values.yaml" \
+    --set storage.local.podSecurityContext.fsGroup=2000 | \
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc '[select((.kind == "Deployment" or .kind == "Job") and .spec.template.spec.securityContext.fsGroup == 2000)] | length' -
+})"
+if [[ "$custom_local_security_count" -ne 6 ]]; then
+  printf 'custom object-mode local-volume fsGroup did not reach every writable Pod\n' >&2
+  exit 1
+fi
+
+object_unbounded_local_count="$({
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc '[select(.kind == "Deployment" or .kind == "Job") | .spec.template.spec.volumes[]? | select(has("emptyDir") and (.name == "packs" or .name == "runtime-envs" or .name == "artifacts" or .name == "pack-staging")) | select(.emptyDir.sizeLimit == null)] | length' - \
+    < "$render_dir/attune-object.yaml"
+})"
+if [[ "$object_unbounded_local_count" -ne 0 ]]; then
+  printf 'object mode rendered an unbounded local storage volume\n' >&2
+  exit 1
+fi
+
+object_bounded_local_count="$({
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc '[select(.kind == "Deployment" or .kind == "Job") | .spec.template.spec.volumes[]? | select(has("emptyDir") and (.name == "packs" or .name == "runtime-envs" or .name == "artifacts" or .name == "pack-staging"))] | length' - \
+    < "$render_dir/attune-object.yaml"
+})"
+if [[ "$object_bounded_local_count" -ne 11 ]]; then
+  printf 'object mode rendered %s bounded storage volumes, expected 11\n' "$object_bounded_local_count" >&2
+  exit 1
+fi
+
+log_buffer_reference_count="$(grep -c 'log-buffer\|/opt/attune/log-buffer' "$render_dir/attune-object.yaml" || true)"
+if [[ "$log_buffer_reference_count" -ne 0 ]]; then
+  printf 'object mode rendered an unused log-buffer volume or mount\n' >&2
+  exit 1
+fi
+
+rendered_log_limits="$({
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc 'select(.kind == "ConfigMap") | .data."config.yaml" | from_yaml | [.artifacts.log_segment_max_bytes, .artifacts.flush_interval_ms] | @tsv' - \
+    < "$render_dir/attune-object.yaml"
+})"
+if [[ "$rendered_log_limits" != $'65536\t500' ]]; then
+  printf 'rendered application config has the wrong runtime-log loss window: %s\n' "$rendered_log_limits" >&2
+  exit 1
+fi
+
+custom_log_limits="$({
+  helm template verify "$root_dir/charts/attune" \
+    --set security.existingSecret=verify-runtime \
+    --set artifacts.logSegmentMaxBytes=12345 \
+    --set artifacts.flushIntervalMs=678 | \
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc 'select(.kind == "ConfigMap") | .data."config.yaml" | from_yaml | [.artifacts.log_segment_max_bytes, .artifacts.flush_interval_ms] | @tsv' -
+})"
+if [[ "$custom_log_limits" != $'12345\t678' ]]; then
+  printf 'operator runtime-log values did not reach application config: %s\n' "$custom_log_limits" >&2
+  exit 1
+fi
+
+if grep -q 'name: wait-for-packs' "$render_dir/attune-object.yaml"; then
+  printf 'object mode retained a filesystem wait-for-packs init container\n' >&2
+  exit 1
+fi
+
+object_init_packs_hook="$({
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc 'select(.kind == "Job" and .metadata.labels."app.kubernetes.io/component" == "init-packs") | .metadata.annotations."helm.sh/hook"' - \
+    < "$render_dir/attune-object-upgrade.yaml"
+})"
+if [[ "$object_init_packs_hook" != post-upgrade ]]; then
+  printf 'object-mode init-packs upgrade Job is not a post-upgrade hook\n' >&2
+  exit 1
+fi
+
+object_init_packs_script="$({
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc 'select(.kind == "Job" and .metadata.labels."app.kubernetes.io/component" == "init-packs") | .spec.template.spec.containers[] | select(.name == "init-packs") | .args[0]' - \
+    < "$render_dir/attune-object-upgrade.yaml"
+})"
+if [[ "$object_init_packs_script" != *'ATTUNE_API_URL'*/health/ready* || "$object_init_packs_script" != *'waiting for api'* ]]; then
+  printf 'object-mode init-packs does not wait for API readiness before bootstrap\n' >&2
+  exit 1
+fi
+
+object_init_packs_api_url="$({
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc 'select(.kind == "Job" and .metadata.labels."app.kubernetes.io/component" == "init-packs") | .spec.template.spec.containers[] | select(.name == "init-packs") | .env[] | select(.name == "ATTUNE_API_URL") | .value' - \
+    < "$render_dir/attune-object-upgrade.yaml"
+})"
+if [[ "$object_init_packs_api_url" != 'http://verify-attune-api-r1:8080' ]]; then
+  printf 'object-mode init-packs is not pinned to the target release revision: %s\n' "$object_init_packs_api_url" >&2
+  exit 1
+fi
+
+revision_api_selector="$({
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc 'select(.kind == "Service" and .metadata.name == "verify-attune-api-r1") | .spec.selector."attune.dev/release-revision"' - \
+    < "$render_dir/attune-object-upgrade.yaml"
+})"
+if [[ "$revision_api_selector" != 1 ]]; then
+  printf 'revision API Service does not select the rendered release revision\n' >&2
+  exit 1
+fi
+
+fresh_object_storage_migration_count="$({
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc '[select(.metadata.labels."app.kubernetes.io/component" == "upgrade-pack-releases" or .metadata.labels."app.kubernetes.io/component" == "migrate-storage")] | length' - \
+    < "$render_dir/attune-object.yaml"
+})"
+if [[ "$fresh_object_storage_migration_count" -ne 0 ]]; then
+  printf 'fresh object install rendered shared-volume migration Jobs\n' >&2
+  exit 1
+fi
+
+if ! grep -q 'migrateFromSharedVolume: false' "$root_dir/charts/attune/values.yaml"; then
+  printf 'shared-volume migration opt-in does not default to false\n' >&2
+  exit 1
+fi
+for storage_cutover_contract in \
+  'command: \["attune-api"\]' \
+  'args: \["--upgrade-pack-releases"\]' \
+  'command: \["attune-supervisor"\]' \
+  'args: \["migrate-storage"\]' \
+  'helm.sh/hook-weight: "-8"' \
+  'helm.sh/hook-weight: "-7"' \
+  'previousReleaseUsesObjectStorage' \
+  'lookup "v1" "PersistentVolumeClaim"'; do
+  if ! grep -Eq "$storage_cutover_contract" "$root_dir/charts/attune/templates/jobs.yaml" "$root_dir/charts/attune/templates/_helpers.tpl"; then
+    printf 'storage cutover template is missing contract %s\n' "$storage_cutover_contract" >&2
+    exit 1
+  fi
+done
+
+object_core_wait_count="$(grep -c 'name: wait-for-core-pack' "$render_dir/attune-object.yaml")"
+if [[ "$object_core_wait_count" -ne 3 ]]; then
+  printf 'object mode expected executor and both worker pools to wait for the core pack, found %s\n' "$object_core_wait_count" >&2
+  exit 1
+fi
+
+object_identity_consumers="$({
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc '[select(.kind == "Deployment" and .spec.template.spec.serviceAccountName != null) | .spec.template.metadata.labels."app.kubernetes.io/component"] | sort | join(",")' - \
+    < "$render_dir/attune-object.yaml"
+})"
+if [[ "$object_identity_consumers" != 'api,supervisor' ]]; then
+  printf 'object identity escaped API and supervisor: %s\n' "$object_identity_consumers" >&2
+  exit 1
+fi
+
+if helm template verify "$root_dir/charts/attune" \
+  --set security.existingSecret=verify-runtime \
+  --set storage.mode=object \
+  --set storage.object.bucket=verify-attune-objects \
+  --set storage.object.region=us-east-1 \
+  --set api.storageMode=sharedVolume \
+  > /dev/null 2>&1; then
+  printf 'chart schema accepted a mixed per-service storage mode\n' >&2
+  exit 1
+fi
+
 "${helm_316[@]}" template verify charts/attune \
   --namespace verify \
   --set-string security.existingSecret=verify-runtime \
@@ -309,6 +646,8 @@ ATTUNE_SETUP_ENCRYPTION_KEY=encryption-key-with-at-least-32-characters \
     --release verify \
     --output-dir "$render_dir/setup-external" >/dev/null
 
+helm lint --strict "$root_dir/charts/attune" \
+  --values "$render_dir/setup-external/values.yaml"
 helm template verify "$root_dir/charts/attune" \
   --namespace verify \
   --values "$render_dir/setup-external/values.yaml" > "$render_dir/attune-external.yaml"
@@ -615,38 +954,40 @@ for chart in "$root_dir"/charts/*; do
   docker run --rm -i ghcr.io/yannh/kubeconform:v0.7.0 \
     -strict -summary < "$render_dir/$chart_name.yaml"
 
-  mkdir -p "$render_dir/generated" "$render_dir/generated-$chart_name" "$render_dir/committed-$chart_name"
-  helm package "$chart" --destination "$render_dir/generated" >/dev/null
-  generated_packages=("$render_dir/generated/$chart_name-"*.tgz)
-  if [[ "${#generated_packages[@]}" -ne 1 ]]; then
-    printf 'expected one generated package for %s\n' "$chart_name" >&2
-    exit 1
-  fi
-  package_name="$(basename "${generated_packages[0]}")"
-  if [[ ! -f "$root_dir/packages/$package_name" ]]; then
-    printf 'missing committed package %s\n' "$package_name" >&2
-    exit 1
-  fi
+  if [[ "${ATTUNE_VERIFY_SKIP_PACKAGE_CHECK:-false}" != true ]]; then
+    mkdir -p "$render_dir/generated" "$render_dir/generated-$chart_name" "$render_dir/committed-$chart_name"
+    helm package "$chart" --destination "$render_dir/generated" >/dev/null
+    generated_packages=("$render_dir/generated/$chart_name-"*.tgz)
+    if [[ "${#generated_packages[@]}" -ne 1 ]]; then
+      printf 'expected one generated package for %s\n' "$chart_name" >&2
+      exit 1
+    fi
+    package_name="$(basename "${generated_packages[0]}")"
+    if [[ ! -f "$root_dir/packages/$package_name" ]]; then
+      printf 'missing committed package %s\n' "$package_name" >&2
+      exit 1
+    fi
 
-  actual_digest="$(sha256sum "$root_dir/packages/$package_name")"
-  actual_digest="${actual_digest%% *}"
-  indexed_digest="$({
-    docker run --rm -i \
-      -e CHART_NAME="$chart_name" \
-      -e PACKAGE_URL="$repository_url/$package_name" \
-      mikefarah/yq:4.47.2 \
-      eval --no-doc \
-      '.entries[strenv(CHART_NAME)][] | select(.urls[] == strenv(PACKAGE_URL)) | .digest' - \
-      < "$root_dir/index.yaml"
-  })"
-  if [[ "$actual_digest" != "$indexed_digest" ]]; then
-    printf 'index digest for %s is stale\n' "$package_name" >&2
-    exit 1
-  fi
+    actual_digest="$(sha256sum "$root_dir/packages/$package_name")"
+    actual_digest="${actual_digest%% *}"
+    indexed_digest="$({
+      docker run --rm -i \
+        -e CHART_NAME="$chart_name" \
+        -e PACKAGE_URL="$repository_url/$package_name" \
+        mikefarah/yq:4.47.2 \
+        eval --no-doc \
+        '.entries[strenv(CHART_NAME)][] | select(.urls[] == strenv(PACKAGE_URL)) | .digest' - \
+        < "$root_dir/index.yaml"
+    })"
+    if [[ "$actual_digest" != "$indexed_digest" ]]; then
+      printf 'index digest for %s is stale\n' "$package_name" >&2
+      exit 1
+    fi
 
-  tar -xzf "${generated_packages[0]}" -C "$render_dir/generated-$chart_name"
-  tar -xzf "$root_dir/packages/$package_name" -C "$render_dir/committed-$chart_name"
-  diff -ru "$render_dir/generated-$chart_name" "$render_dir/committed-$chart_name"
+    tar -xzf "${generated_packages[0]}" -C "$render_dir/generated-$chart_name"
+    tar -xzf "$root_dir/packages/$package_name" -C "$render_dir/committed-$chart_name"
+    diff -ru "$render_dir/generated-$chart_name" "$render_dir/committed-$chart_name"
+  fi
 done
 
 mapfile -t deployment_names < <(

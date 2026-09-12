@@ -98,7 +98,7 @@ metadata:
     app.kubernetes.io/component: init-packs
   {{- if .Release.IsUpgrade }}
   annotations:
-    helm.sh/hook: pre-upgrade
+    helm.sh/hook: {{ ternary "post-upgrade" "pre-upgrade" (eq .Values.storage.mode "object") }}
     helm.sh/hook-weight: "0"
     helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
   {{- end }}
@@ -111,6 +111,9 @@ spec:
         {{- include "attune.componentLabels" (dict "root" . "component" "init-packs") | nindent 8 }}
     spec:
       restartPolicy: OnFailure
+      {{- if eq .Values.storage.mode "object" }}
+      {{- include "attune.localStoragePodSecurityContext" . | nindent 6 }}
+      {{- end }}
       {{- if .Values.global.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml .Values.global.imagePullSecrets | nindent 8 }}
@@ -122,9 +125,32 @@ spec:
           envFrom:
             - secretRef:
                 name: {{ include "attune.secretName" . | quote }}
+          {{- if eq .Values.storage.mode "object" }}
+          env:
+            - name: ATTUNE_BOOTSTRAP_MODE
+              value: api
+            - name: ATTUNE_API_URL
+              value: {{ printf "http://%s:%v" (include "attune.revisionApiServiceName" .) .Values.api.service.port | quote }}
+          {{- end }}
           command: ["/bin/sh", "-ec"]
           args:
             - |
+              {{- if eq .Values.storage.mode "object" }}
+              until python3 - <<'PY'
+              import os
+              import urllib.request
+
+              with urllib.request.urlopen(
+                  f"{os.environ['ATTUNE_API_URL']}/health/ready", timeout=5
+              ) as response:
+                  raise SystemExit(0 if 200 <= response.status < 300 else 1)
+              PY
+              do
+                echo "waiting for api";
+                sleep 2;
+              done
+              exec /init-packs.sh
+              {{- else }}
               until python3 - <<'PY'
               import os
               import psycopg2
@@ -155,6 +181,8 @@ spec:
                 sleep 2;
               done
               exec /init-packs.sh
+              {{- end }}
+          {{- if eq .Values.storage.mode "sharedVolume" }}
           volumeMounts:
             - name: packs
               mountPath: /opt/attune/packs
@@ -162,9 +190,15 @@ spec:
               mountPath: /opt/attune/runtime_envs
             - name: artifacts
               mountPath: /opt/attune/artifacts
+          {{- else }}
+          volumeMounts:
+            - name: pack-staging
+              mountPath: /tmp
+          {{- end }}
           resources:
             {{- toYaml .Values.jobs.initPacks.resources | nindent 12 }}
       volumes:
+        {{- if eq .Values.storage.mode "sharedVolume" }}
         - name: packs
           persistentVolumeClaim:
             claimName: {{ printf "%s-packs" (include "attune.fullname" .) | quote }}
@@ -174,3 +208,192 @@ spec:
         - name: artifacts
           persistentVolumeClaim:
             claimName: {{ printf "%s-artifacts" (include "attune.fullname" .) | quote }}
+        {{- else }}
+        - name: pack-staging
+          emptyDir:
+            sizeLimit: {{ .Values.storage.local.packs.sizeLimit | quote }}
+        {{- end }}
+{{- if eq (include "attune.storageCutoverRequired" .) "true" }}
+{{- if not .Values.storage.object.migrateFromSharedVolume }}
+{{- fail "legacy Attune PVCs were found during a sharedVolume-to-object upgrade; set storage.object.migrateFromSharedVolume=true only after stopping writes and backing up the database and PVCs" }}
+{{- end }}
+{{- $packs := lookup "v1" "PersistentVolumeClaim" .Release.Namespace (printf "%s-packs" (include "attune.fullname" .)) }}
+{{- $artifacts := lookup "v1" "PersistentVolumeClaim" .Release.Namespace (printf "%s-artifacts" (include "attune.fullname" .)) }}
+{{- if not (and $packs $artifacts) }}
+{{- fail "sharedVolume-to-object migration requires both the legacy packs and artifacts PVCs; restore the missing claim before retrying" }}
+{{- end }}
+{{- if .Values.serviceAccounts.api.create }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "attune.storageMigrationApiServiceAccountName" . | quote }}
+  labels:
+    {{- include "attune.labels" . | nindent 4 }}
+    app.kubernetes.io/component: storage-migration-api
+  annotations:
+    helm.sh/hook: pre-upgrade
+    helm.sh/hook-weight: "-11"
+    helm.sh/hook-delete-policy: before-hook-creation
+    {{- with .Values.serviceAccounts.api.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+{{- end }}
+{{- if .Values.serviceAccounts.supervisor.create }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "attune.storageMigrationSupervisorServiceAccountName" . | quote }}
+  labels:
+    {{- include "attune.labels" . | nindent 4 }}
+    app.kubernetes.io/component: storage-migration-supervisor
+  annotations:
+    helm.sh/hook: pre-upgrade
+    helm.sh/hook-weight: "-11"
+    helm.sh/hook-delete-policy: before-hook-creation
+    {{- with .Values.serviceAccounts.supervisor.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+{{- end }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ printf "%s-storage-migration-config" (include "attune.fullname" .) | trunc 63 | trimSuffix "-" | quote }}
+  labels:
+    {{- include "attune.labels" . | nindent 4 }}
+    app.kubernetes.io/component: storage-migration
+  annotations:
+    helm.sh/hook: pre-upgrade
+    helm.sh/hook-weight: "-9"
+    helm.sh/hook-delete-policy: before-hook-creation
+data:
+  config.yaml: |
+{{- $renderedConfigMap := include (print $.Template.BasePath "/configmap.yaml") . | fromYaml }}
+{{ get (get $renderedConfigMap "data") "config.yaml" | indent 4 }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ printf "%s-upgrade-pack-releases" (include "attune.fullname" .) | trunc 63 | trimSuffix "-" | quote }}
+  labels:
+    {{- include "attune.labels" . | nindent 4 }}
+    app.kubernetes.io/component: upgrade-pack-releases
+  annotations:
+    helm.sh/hook: pre-upgrade
+    helm.sh/hook-weight: "-8"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  activeDeadlineSeconds: {{ .Values.jobs.storageMigration.activeDeadlineSeconds }}
+  ttlSecondsAfterFinished: {{ .Values.jobs.storageMigration.ttlSecondsAfterFinished }}
+  template:
+    metadata:
+      labels:
+        {{- include "attune.componentLabels" (dict "root" . "component" "upgrade-pack-releases") | nindent 8 }}
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: {{ include "attune.storageMigrationApiServiceAccountName" . | quote }}
+      {{- if .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml .Values.global.imagePullSecrets | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: upgrade-pack-releases
+          image: {{ include "attune.image" (dict "root" . "image" .Values.images.api) | quote }}
+          imagePullPolicy: {{ .Values.images.api.pullPolicy | quote }}
+          command: ["attune-api"]
+          args: ["--upgrade-pack-releases"]
+          envFrom:
+            - secretRef:
+                name: {{ include "attune.secretName" . | quote }}
+          env:
+            - name: ATTUNE_CONFIG
+              value: /opt/attune/config.yaml
+            - name: ATTUNE__DATABASE__SCHEMA
+              value: {{ .Values.database.schema | quote }}
+          volumeMounts:
+            - name: config
+              mountPath: /opt/attune/config.yaml
+              subPath: config.yaml
+            - name: legacy-packs
+              mountPath: /opt/attune/packs
+              readOnly: false
+            - name: legacy-artifacts
+              mountPath: /opt/attune/artifacts
+              readOnly: false
+          resources:
+            {{- toYaml .Values.jobs.storageMigration.resources | nindent 12 }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ printf "%s-storage-migration-config" (include "attune.fullname" .) | trunc 63 | trimSuffix "-" | quote }}
+        - name: legacy-packs
+          persistentVolumeClaim:
+            claimName: {{ printf "%s-packs" (include "attune.fullname" .) | quote }}
+        - name: legacy-artifacts
+          persistentVolumeClaim:
+            claimName: {{ printf "%s-artifacts" (include "attune.fullname" .) | quote }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ printf "%s-migrate-storage" (include "attune.fullname" .) | trunc 63 | trimSuffix "-" | quote }}
+  labels:
+    {{- include "attune.labels" . | nindent 4 }}
+    app.kubernetes.io/component: migrate-storage
+  annotations:
+    helm.sh/hook: pre-upgrade
+    helm.sh/hook-weight: "-7"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  activeDeadlineSeconds: {{ .Values.jobs.storageMigration.activeDeadlineSeconds }}
+  ttlSecondsAfterFinished: {{ .Values.jobs.storageMigration.ttlSecondsAfterFinished }}
+  template:
+    metadata:
+      labels:
+        {{- include "attune.componentLabels" (dict "root" . "component" "migrate-storage") | nindent 8 }}
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: {{ include "attune.storageMigrationSupervisorServiceAccountName" . | quote }}
+      {{- if .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml .Values.global.imagePullSecrets | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: migrate-storage
+          image: {{ include "attune.image" (dict "root" . "image" .Values.images.supervisor) | quote }}
+          imagePullPolicy: {{ .Values.images.supervisor.pullPolicy | quote }}
+          command: ["attune-supervisor"]
+          args: ["migrate-storage"]
+          envFrom:
+            - secretRef:
+                name: {{ include "attune.secretName" . | quote }}
+          env:
+            - name: ATTUNE_CONFIG
+              value: /opt/attune/config.yaml
+            - name: ATTUNE__DATABASE__SCHEMA
+              value: {{ .Values.database.schema | quote }}
+          volumeMounts:
+            - name: config
+              mountPath: /opt/attune/config.yaml
+              subPath: config.yaml
+            - name: legacy-packs
+              mountPath: /opt/attune/packs
+              readOnly: false
+            - name: legacy-artifacts
+              mountPath: /opt/attune/artifacts
+              readOnly: false
+          resources:
+            {{- toYaml .Values.jobs.storageMigration.resources | nindent 12 }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ printf "%s-storage-migration-config" (include "attune.fullname" .) | trunc 63 | trimSuffix "-" | quote }}
+        - name: legacy-packs
+          persistentVolumeClaim:
+            claimName: {{ printf "%s-packs" (include "attune.fullname" .) | quote }}
+        - name: legacy-artifacts
+          persistentVolumeClaim:
+            claimName: {{ printf "%s-artifacts" (include "attune.fullname" .) | quote }}
+{{- end }}

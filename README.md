@@ -1,11 +1,11 @@
 # Attune Helm charts
 
-This repository publishes Helm charts for the Attune platform and its public
-sites.
+This repository is the canonical source for Attune Helm chart releases. It
+publishes charts for the Attune platform and its public sites.
 
 | Chart | Version | Purpose |
 | --- | --- | --- |
-| `attune` | `0.6.3` | Attune services, workers, PostgreSQL, and RabbitMQ |
+| `attune` | `0.7.0` | Attune services, workers, PostgreSQL, and RabbitMQ |
 | `attune-site` | `0.1.5` | `attunedev.org` and its inquiry form |
 | `attune-docs-site` | `0.1.3` | `docs.attunedev.org` |
 
@@ -72,7 +72,7 @@ single-node or development cluster. The generator does not configure database
 backups, so add a tested CloudNativePG backup policy before using it in
 production. Never commit the generated `secrets.yaml` file.
 
-Attune `0.5.3` uses the known initial password `TestPass123!`. Install without
+Attune `0.6.0` uses the known initial password `TestPass123!`. Install without
 ingress, then use a local port-forward for the first login:
 
 ```bash
@@ -181,7 +181,7 @@ helm upgrade --install attune attune/attune \
   --timeout 20m
 ```
 
-The platform chart pulls Attune `0.5.3` images from
+The platform chart pulls Attune `0.6.0` images from
 `ghcr.io/attune-system/attune`. Apply the generated namespace, Secret, and
 optional CloudNativePG manifests before installation. The chart does not accept
 credentials through Helm values.
@@ -211,7 +211,7 @@ It pins the release version instead of using the mutable `latest` image tag.
 Run the same update locally with:
 
 ```bash
-./scripts/update-attune-release.py 0.5.3
+./scripts/update-attune-release.py 0.6.0
 ./scripts/package.sh
 ```
 
@@ -219,4 +219,11 @@ Run all chart checks with:
 
 ```bash
 ./scripts/verify.sh
+```
+
+While chart source is intentionally ahead of the committed package during
+development, run the same checks without package and index comparison:
+
+```bash
+ATTUNE_VERIFY_SKIP_PACKAGE_CHECK=true ./scripts/verify.sh
 ```

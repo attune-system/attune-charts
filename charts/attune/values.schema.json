@@ -9,6 +9,9 @@
     "database",
     "rabbitmq",
     "packRegistry",
+    "artifacts",
+    "storage",
+    "serviceAccounts",
     "sharedStorage",
     "images",
     "jobs",
@@ -227,6 +230,89 @@
         "allowUnverifiedDirectRemoteInstalls": { "type": "boolean" }
       }
     },
+    "artifacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["logSegmentMaxBytes", "flushIntervalMs"],
+      "properties": {
+        "logSegmentMaxBytes": { "type": "integer", "minimum": 1, "maximum": 4294967295 },
+        "flushIntervalMs": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "storage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "object", "local"],
+      "properties": {
+        "mode": { "type": "string", "enum": ["sharedVolume", "object"] },
+        "object": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["provider", "bucket", "prefix", "region", "endpoint", "kmsKey", "migrateFromSharedVolume"],
+          "properties": {
+            "provider": { "type": "string", "enum": ["s3", "gcs"] },
+            "bucket": { "type": "string" },
+            "prefix": { "type": "string" },
+            "region": { "type": "string" },
+            "endpoint": { "type": "string" },
+            "kmsKey": { "type": "string" },
+            "migrateFromSharedVolume": {
+              "type": "boolean",
+              "description": "Explicitly permits the one-time sharedVolume-to-object migration during an actual Helm upgrade. Leave false for installs and later object-mode upgrades."
+            }
+          }
+        },
+        "local": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode", "podSecurityContext", "packs", "runtimeEnvs", "artifactStaging"],
+          "properties": {
+            "mode": { "type": "string", "enum": ["emptyDir", "genericEphemeralVolume"] },
+            "podSecurityContext": { "$ref": "#/definitions/localStoragePodSecurityContext" },
+            "packs": { "$ref": "#/definitions/localCacheVolume" },
+            "runtimeEnvs": { "$ref": "#/definitions/localCacheVolume" },
+            "artifactStaging": { "$ref": "#/definitions/localVolume" }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "mode": { "const": "object" } } },
+          "then": {
+            "properties": {
+              "object": {
+                "properties": { "bucket": { "minLength": 1 } },
+                "allOf": [
+                  {
+                    "if": { "properties": { "provider": { "const": "s3" } } },
+                    "then": { "properties": { "region": { "minLength": 1 } } }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "local": {
+                "properties": { "mode": { "const": "genericEphemeralVolume" } }
+              }
+            }
+          },
+          "then": { "properties": { "mode": { "const": "object" } } }
+        }
+      ]
+    },
+    "serviceAccounts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["api", "supervisor"],
+      "properties": {
+        "api": { "$ref": "#/definitions/serviceAccount" },
+        "supervisor": { "$ref": "#/definitions/serviceAccount" }
+      }
+    },
     "sharedStorage": {
       "type": "object",
       "additionalProperties": true,
@@ -277,17 +363,19 @@
     "jobs": {
       "type": "object",
       "additionalProperties": true,
-      "required": ["migrations", "initUser", "initPacks"],
+      "required": ["migrations", "initUser", "initPacks", "storageMigration"],
       "properties": {
         "migrations": { "$ref": "#/definitions/job" },
         "initUser": { "$ref": "#/definitions/job" },
-        "initPacks": { "$ref": "#/definitions/job" }
+        "initPacks": { "$ref": "#/definitions/job" },
+        "storageMigration": { "$ref": "#/definitions/job" }
       }
     },
     "api": {
       "type": "object",
       "additionalProperties": true,
       "required": ["replicaCount", "service"],
+      "not": { "anyOf": [{ "required": ["storage"] }, { "required": ["storageMode"] }] },
       "properties": {
         "replicaCount": { "$ref": "#/definitions/replicas" },
         "service": { "$ref": "#/definitions/service" },
@@ -298,6 +386,7 @@
       "type": "object",
       "additionalProperties": true,
       "required": ["replicaCount"],
+      "not": { "anyOf": [{ "required": ["storage"] }, { "required": ["storageMode"] }] },
       "properties": {
         "replicaCount": { "$ref": "#/definitions/replicas" },
         "resources": { "$ref": "#/definitions/resources" }
@@ -307,6 +396,7 @@
       "type": "object",
       "additionalProperties": true,
       "required": ["replicaCount"],
+      "not": { "anyOf": [{ "required": ["storage"] }, { "required": ["storageMode"] }] },
       "properties": {
         "replicaCount": { "$ref": "#/definitions/replicas" },
         "resources": { "$ref": "#/definitions/resources" }
@@ -442,6 +532,42 @@
         { "type": "string", "minLength": 1 },
         { "type": "number", "minimum": 0 }
       ]
+    },
+    "localVolume": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sizeLimit"],
+      "properties": {
+        "sizeLimit": { "type": "string", "minLength": 1 }
+      }
+    },
+    "localStoragePodSecurityContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fsGroup", "fsGroupChangePolicy"],
+      "properties": {
+        "fsGroup": { "type": "integer", "minimum": 1, "maximum": 4294967295 },
+        "fsGroupChangePolicy": { "type": "string", "enum": ["Always", "OnRootMismatch"] }
+      }
+    },
+    "localCacheVolume": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sizeLimit", "storageClassName"],
+      "properties": {
+        "sizeLimit": { "type": "string", "minLength": 1 },
+        "storageClassName": { "type": "string" }
+      }
+    },
+    "serviceAccount": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["create", "name", "annotations"],
+      "properties": {
+        "create": { "type": "boolean" },
+        "name": { "type": "string" },
+        "annotations": { "$ref": "#/definitions/stringMap" }
+      }
     },
     "quantityMap": {
       "type": "object",
@@ -646,6 +772,7 @@
     "workerBaseProperties": {
       "type": "object",
       "additionalProperties": true,
+      "not": { "anyOf": [{ "required": ["storage"] }, { "required": ["storageMode"] }] },
       "properties": {
         "name": { "$ref": "#/definitions/workerName" },
         "image": { "type": "string", "minLength": 1 },

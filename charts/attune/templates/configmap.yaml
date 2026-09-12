@@ -19,6 +19,18 @@
 {{- if and .Values.mcp.enabled (not .Values.mcp.auth.useBootstrapTestUser) (empty .Values.mcp.auth.existingSecret) }}
 {{- fail "mcp.auth.existingSecret is required when MCP does not use the bootstrap identity" }}
 {{- end }}
+{{- if and (eq .Values.storage.mode "object") (empty .Values.storage.object.bucket) }}
+{{- fail "storage.object.bucket is required when storage.mode is object" }}
+{{- end }}
+{{- if and (eq .Values.storage.mode "object") (eq .Values.storage.object.provider "s3") (empty .Values.storage.object.region) }}
+{{- fail "storage.object.region is required for S3 object mode" }}
+{{- end }}
+{{- if and (eq .Values.storage.mode "object") (not .Values.serviceAccounts.api.create) (empty .Values.serviceAccounts.api.name) }}
+{{- fail "serviceAccounts.api.name is required when object mode uses an existing API service account" }}
+{{- end }}
+{{- if and (eq .Values.storage.mode "object") (not .Values.serviceAccounts.supervisor.create) (empty .Values.serviceAccounts.supervisor.name) }}
+{{- fail "serviceAccounts.supervisor.name is required when object mode uses an existing supervisor service account" }}
+{{- end }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -87,6 +99,26 @@ data:
       allow_unverified_direct_remote_installs: {{ .Values.packRegistry.allowUnverifiedDirectRemoteInstalls }}
       approved_public_hosts:
 {{ toYaml .Values.packRegistry.approvedPublicHosts | indent 8 }}
+    packs:
+      transport: {{ ternary "api" "volume" (eq .Values.storage.mode "object") | quote }}
+    artifacts:
+      transport: {{ ternary "api" "volume" (eq .Values.storage.mode "object") | quote }}
+      log_segment_max_bytes: {{ .Values.artifacts.logSegmentMaxBytes }}
+      flush_interval_ms: {{ .Values.artifacts.flushIntervalMs }}
+    storage:
+      {{- if eq .Values.storage.mode "object" }}
+      provider: {{ .Values.storage.object.provider | quote }}
+      bucket: {{ .Values.storage.object.bucket | quote }}
+      prefix: {{ .Values.storage.object.prefix | quote }}
+      {{- if eq .Values.storage.object.provider "s3" }}
+      region: {{ .Values.storage.object.region | quote }}
+      kms_key: {{ .Values.storage.object.kmsKey | default nil | toJson }}
+      {{- end }}
+      endpoint: {{ .Values.storage.object.endpoint | default nil | toJson }}
+      {{- else }}
+      provider: filesystem
+      root: /opt/attune/artifacts
+      {{- end }}
     notifier:
       host: "0.0.0.0"
       port: {{ .Values.notifier.service.port }}

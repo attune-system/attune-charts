@@ -1,0 +1,14 @@
+security:
+  existingSecret: verify-runtime
+storage:
+  mode: object
+  object:
+    provider: s3
+    bucket: verify-attune-objects
+    region: us-east-1
+  local:
+    mode: genericEphemeralVolume
+    packs:
+      storageClassName: verify-rwo-storage
+    runtimeEnvs:
+      storageClassName: verify-rwo-storage

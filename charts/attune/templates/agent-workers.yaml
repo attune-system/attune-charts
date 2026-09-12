@@ -24,6 +24,9 @@ spec:
       annotations:
         attune.dev/release-revision: {{ $.Release.Revision | quote }}
     spec:
+      {{- if eq $.Values.storage.mode "object" }}
+      {{- include "attune.localStoragePodSecurityContext" $ | nindent 6 }}
+      {{- end }}
       {{- if $.Values.global.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml $.Values.global.imagePullSecrets | nindent 8 }}
@@ -74,6 +77,9 @@ spec:
           envFrom:
             - secretRef:
                 name: {{ include "attune.secretName" $ | quote }}
+        {{- if eq $.Values.storage.mode "object" }}
+        {{- include "attune.waitForCorePack" $ | nindent 8 }}
+        {{- else }}
         - name: wait-for-packs
           image: busybox:1.36
           command: ["/bin/sh", "-ec"]
@@ -86,6 +92,7 @@ spec:
           volumeMounts:
             - name: packs
               mountPath: /opt/attune/packs
+        {{- end }}
         {{- if and $.Values.rabbitmq.enabled $.Values.rabbitmq.provisioning.enabled }}
         {{- include "attune.waitForRabbitmqCredentials" $ | nindent 8 }}
         {{- else }}
@@ -132,7 +139,9 @@ spec:
               subPath: config.yaml
             - name: packs
               mountPath: /opt/attune/packs
+              {{- if ne $.Values.storage.mode "object" }}
               readOnly: true
+              {{- end }}
             - name: runtime-envs
               mountPath: /opt/attune/runtime_envs
             - name: artifacts
@@ -144,14 +153,27 @@ spec:
           configMap:
             name: {{ printf "%s-config" (include "attune.fullname" $) | quote }}
         - name: packs
+          {{- if eq $.Values.storage.mode "object" }}
+          {{- include "attune.localCacheVolume" (dict "root" $ "volume" $.Values.storage.local.packs) | nindent 10 }}
+          {{- else }}
           persistentVolumeClaim:
             claimName: {{ printf "%s-packs" (include "attune.fullname" $) | quote }}
+          {{- end }}
         - name: runtime-envs
+          {{- if eq $.Values.storage.mode "object" }}
+          {{- include "attune.localCacheVolume" (dict "root" $ "volume" $.Values.storage.local.runtimeEnvs) | nindent 10 }}
+          {{- else }}
           persistentVolumeClaim:
             claimName: {{ printf "%s-runtime-envs" (include "attune.fullname" $) | quote }}
+          {{- end }}
         - name: artifacts
+          {{- if eq $.Values.storage.mode "object" }}
+          emptyDir:
+            sizeLimit: {{ $.Values.storage.local.artifactStaging.sizeLimit | quote }}
+          {{- else }}
           persistentVolumeClaim:
             claimName: {{ printf "%s-artifacts" (include "attune.fullname" $) | quote }}
+          {{- end }}
 {{ end }}
 {{ range .Values.sensorWorkers }}
 {{- $poolName := .name | lower | replace "_" "-" -}}
@@ -179,6 +201,9 @@ spec:
       annotations:
         attune.dev/release-revision: {{ $.Release.Revision | quote }}
     spec:
+      {{- if eq $.Values.storage.mode "object" }}
+      {{- include "attune.localStoragePodSecurityContext" $ | nindent 6 }}
+      {{- end }}
       {{- if $.Values.global.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml $.Values.global.imagePullSecrets | nindent 8 }}
@@ -225,6 +250,9 @@ spec:
           envFrom:
             - secretRef:
                 name: {{ include "attune.secretName" $ | quote }}
+        {{- if eq $.Values.storage.mode "object" }}
+        {{- include "attune.waitForCorePack" $ | nindent 8 }}
+        {{- else }}
         - name: wait-for-packs
           image: busybox:1.36
           command: ["/bin/sh", "-ec"]
@@ -237,6 +265,7 @@ spec:
           volumeMounts:
             - name: packs
               mountPath: /opt/attune/packs
+        {{- end }}
         {{- if and $.Values.rabbitmq.enabled $.Values.rabbitmq.provisioning.enabled }}
         {{- include "attune.waitForRabbitmqCredentials" $ | nindent 8 }}
         {{- else }}
@@ -285,9 +314,15 @@ spec:
               subPath: config.yaml
             - name: packs
               mountPath: /opt/attune/packs
+              {{- if ne $.Values.storage.mode "object" }}
               readOnly: true
+              {{- end }}
             - name: runtime-envs
               mountPath: /opt/attune/runtime_envs
+            {{- if eq $.Values.storage.mode "object" }}
+            - name: artifacts
+              mountPath: /opt/attune/artifacts
+            {{- end }}
       volumes:
         - name: agent-bin
           emptyDir: {}
@@ -295,9 +330,22 @@ spec:
           configMap:
             name: {{ printf "%s-config" (include "attune.fullname" $) | quote }}
         - name: packs
+          {{- if eq $.Values.storage.mode "object" }}
+          {{- include "attune.localCacheVolume" (dict "root" $ "volume" $.Values.storage.local.packs) | nindent 10 }}
+          {{- else }}
           persistentVolumeClaim:
             claimName: {{ printf "%s-packs" (include "attune.fullname" $) | quote }}
+          {{- end }}
         - name: runtime-envs
+          {{- if eq $.Values.storage.mode "object" }}
+          {{- include "attune.localCacheVolume" (dict "root" $ "volume" $.Values.storage.local.runtimeEnvs) | nindent 10 }}
+          {{- else }}
           persistentVolumeClaim:
             claimName: {{ printf "%s-runtime-envs" (include "attune.fullname" $) | quote }}
+          {{- end }}
+        {{- if eq $.Values.storage.mode "object" }}
+        - name: artifacts
+          emptyDir:
+            sizeLimit: {{ $.Values.storage.local.artifactStaging.sizeLimit | quote }}
+        {{- end }}
 {{- end }}

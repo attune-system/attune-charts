@@ -1,0 +1,4 @@
+security:
+  existingSecret: verify-runtime
+storage:
+  mode: sharedVolume

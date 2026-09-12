@@ -1,10 +1,18 @@
+{{- $packsName := printf "%s-packs" (include "attune.fullname" .) -}}
+{{- $packsClaim := lookup "v1" "PersistentVolumeClaim" .Release.Namespace $packsName -}}
+{{- if or (eq .Values.storage.mode "sharedVolume") $packsClaim }}
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: {{ printf "%s-packs" (include "attune.fullname" .) | quote }}
+  name: {{ $packsName | quote }}
   labels:
     {{- include "attune.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
 spec:
+  {{- if eq .Values.storage.mode "object" }}
+  {{- toYaml $packsClaim.spec | nindent 2 }}
+  {{- else }}
   accessModes:
     {{- toYaml .Values.sharedStorage.packs.accessModes | nindent 4 }}
   resources:
@@ -13,14 +21,24 @@ spec:
   {{- if .Values.sharedStorage.packs.storageClassName }}
   storageClassName: {{ .Values.sharedStorage.packs.storageClassName | quote }}
   {{- end }}
+  {{- end }}
+{{- end }}
+{{- $runtimeEnvsName := printf "%s-runtime-envs" (include "attune.fullname" .) -}}
+{{- $runtimeEnvsClaim := lookup "v1" "PersistentVolumeClaim" .Release.Namespace $runtimeEnvsName -}}
+{{- if or (eq .Values.storage.mode "sharedVolume") $runtimeEnvsClaim }}
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: {{ printf "%s-runtime-envs" (include "attune.fullname" .) | quote }}
+  name: {{ $runtimeEnvsName | quote }}
   labels:
     {{- include "attune.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
 spec:
+  {{- if eq .Values.storage.mode "object" }}
+  {{- toYaml $runtimeEnvsClaim.spec | nindent 2 }}
+  {{- else }}
   accessModes:
     {{- toYaml .Values.sharedStorage.runtimeEnvs.accessModes | nindent 4 }}
   resources:
@@ -29,14 +47,24 @@ spec:
   {{- if .Values.sharedStorage.runtimeEnvs.storageClassName }}
   storageClassName: {{ .Values.sharedStorage.runtimeEnvs.storageClassName | quote }}
   {{- end }}
+  {{- end }}
+{{- end }}
+{{- $artifactsName := printf "%s-artifacts" (include "attune.fullname" .) -}}
+{{- $artifactsClaim := lookup "v1" "PersistentVolumeClaim" .Release.Namespace $artifactsName -}}
+{{- if or (eq .Values.storage.mode "sharedVolume") $artifactsClaim }}
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: {{ printf "%s-artifacts" (include "attune.fullname" .) | quote }}
+  name: {{ $artifactsName | quote }}
   labels:
     {{- include "attune.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
 spec:
+  {{- if eq .Values.storage.mode "object" }}
+  {{- toYaml $artifactsClaim.spec | nindent 2 }}
+  {{- else }}
   accessModes:
     {{- toYaml .Values.sharedStorage.artifacts.accessModes | nindent 4 }}
   resources:
@@ -45,3 +73,5 @@ spec:
   {{- if .Values.sharedStorage.artifacts.storageClassName }}
   storageClassName: {{ .Values.sharedStorage.artifacts.storageClassName | quote }}
   {{- end }}
+  {{- end }}
+{{- end }}

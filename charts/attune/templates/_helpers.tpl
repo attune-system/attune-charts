@@ -108,6 +108,90 @@ app.kubernetes.io/component: {{ .component | quote }}
 {{- printf "%s-mcp" (include "attune.fullname" .) -}}
 {{- end -}}
 
+{{- define "attune.apiServiceAccountName" -}}
+{{- default (printf "%s-api" (include "attune.fullname" .)) .Values.serviceAccounts.api.name -}}
+{{- end -}}
+
+{{- define "attune.supervisorServiceAccountName" -}}
+{{- default (printf "%s-supervisor" (include "attune.fullname" .)) .Values.serviceAccounts.supervisor.name -}}
+{{- end -}}
+
+{{- define "attune.storageMigrationApiServiceAccountName" -}}
+{{- if .Values.serviceAccounts.api.create -}}
+{{- printf "%s-storage-migration-api" (include "attune.fullname" .) | trunc 63 | trimSuffix "-" -}}
+{{- else -}}
+{{- include "attune.apiServiceAccountName" . -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "attune.storageMigrationSupervisorServiceAccountName" -}}
+{{- if .Values.serviceAccounts.supervisor.create -}}
+{{- printf "%s-storage-migration-supervisor" (include "attune.fullname" .) | trunc 63 | trimSuffix "-" -}}
+{{- else -}}
+{{- include "attune.supervisorServiceAccountName" . -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "attune.revisionApiServiceName" -}}
+{{- $suffix := printf "-api-r%d" .Release.Revision -}}
+{{- printf "%s%s" (include "attune.fullname" . | trunc (int (sub 63 (len $suffix))) | trimSuffix "-") $suffix -}}
+{{- end -}}
+
+{{- define "attune.previousReleaseUsesObjectStorage" -}}
+{{- $configMap := lookup "v1" "ConfigMap" .Release.Namespace (printf "%s-config" (include "attune.fullname" .)) -}}
+{{- $configData := get ($configMap | default dict) "data" | default dict -}}
+{{- $config := get $configData "config.yaml" | default "" | fromYaml | default dict -}}
+{{- $storage := get $config "storage" | default dict -}}
+{{- $provider := get $storage "provider" | default "" -}}
+{{- if or (eq $provider "s3") (eq $provider "gcs") -}}true{{- else -}}false{{- end -}}
+{{- end -}}
+
+{{- define "attune.storageCutoverRequired" -}}
+{{- $packs := lookup "v1" "PersistentVolumeClaim" .Release.Namespace (printf "%s-packs" (include "attune.fullname" .)) -}}
+{{- $runtimeEnvs := lookup "v1" "PersistentVolumeClaim" .Release.Namespace (printf "%s-runtime-envs" (include "attune.fullname" .)) -}}
+{{- $artifacts := lookup "v1" "PersistentVolumeClaim" .Release.Namespace (printf "%s-artifacts" (include "attune.fullname" .)) -}}
+{{- $hasLegacyClaims := or $packs $runtimeEnvs $artifacts -}}
+{{- $previousObjectMode := eq (include "attune.previousReleaseUsesObjectStorage" .) "true" -}}
+{{- if and .Release.IsUpgrade (eq .Values.storage.mode "object") $hasLegacyClaims (not $previousObjectMode) -}}true{{- else -}}false{{- end -}}
+{{- end -}}
+
+{{- define "attune.localCacheVolume" -}}
+{{- if eq .root.Values.storage.local.mode "genericEphemeralVolume" -}}
+ephemeral:
+  volumeClaimTemplate:
+    spec:
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: {{ .volume.sizeLimit | quote }}
+      {{- if .volume.storageClassName }}
+      storageClassName: {{ .volume.storageClassName | quote }}
+      {{- end }}
+{{- else -}}
+emptyDir:
+  sizeLimit: {{ .volume.sizeLimit | quote }}
+{{- end }}
+{{- end -}}
+
+{{- define "attune.localStoragePodSecurityContext" -}}
+securityContext:
+  {{- toYaml .Values.storage.local.podSecurityContext | nindent 2 }}
+{{- end -}}
+
+{{- define "attune.waitForCorePack" -}}
+- name: wait-for-core-pack
+  image: {{ include "attune.image" (dict "root" . "image" .Values.images.initPacks) | quote }}
+  imagePullPolicy: {{ .Values.images.initPacks.pullPolicy | quote }}
+  command: ["python3", "/scripts/bootstrap_core_pack.py", "wait"]
+  env:
+    - name: ATTUNE_API_URL
+      value: {{ printf "http://%s:%v" (include "attune.apiServiceName" .) .Values.api.service.port | quote }}
+  envFrom:
+    - secretRef:
+        name: {{ include "attune.secretName" . | quote }}
+{{- end -}}
+
 {{- define "attune.waitForDatabaseCredentials" -}}
 - name: wait-for-database-credentials
   image: postgres:16-alpine

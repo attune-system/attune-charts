@@ -6,7 +6,7 @@ This chart installs the Attune platform, including these components:
 - Action-worker and sensor-worker pools
 - Optional bundled TimescaleDB and RabbitMQ StatefulSets
 - Migration, bootstrap-user, and pack-initialization Jobs
-- Shared claims for packs, runtime environments, and artifacts
+- Shared claims or RWX-free object storage for packs, runtime environments, and artifacts
 
 The chart defaults target a small single-node k3s cluster. All platform
 Deployments use one replica, and shared claims use `ReadWriteOnce`.
@@ -31,7 +31,7 @@ web:
     enabled: false
 ```
 
-Attune `0.5.3` starts with the known bootstrap password `TestPass123!`. Keep
+Attune `0.6.0` starts with the known bootstrap password `TestPass123!`. Keep
 ingress disabled for the first login.
 
 When upgrading from chart `0.5.4` or older, copy the chart-managed
@@ -91,10 +91,11 @@ web:
 
 Fresh installations run initialization Jobs as normal release resources, so
 application init containers and Helm can wait for them together. Upgrades run
-the PostgreSQL provisioner and initialization Jobs as ordered `pre-upgrade`
-hooks. The RabbitMQ provisioner remains a normal release Job. New application
-Pods wait for it to reconcile the password while the rolling update retains old
-ready replicas.
+the PostgreSQL provisioner, migrations, and user initialization as ordered
+`pre-upgrade` hooks. Pack initialization is a `pre-upgrade` hook for shared
+volumes and a `post-upgrade` hook for object storage. The RabbitMQ provisioner
+remains a normal release Job. New application Pods wait for it to reconcile the
+password while the rolling update retains old ready replicas.
 
 The PostgreSQL provisioner creates a restricted login, transfers ownership of
 the Attune database and schema to it, and pre-creates extensions that require
@@ -103,7 +104,7 @@ administrator tags and grants it access to the `/` vhost. Both provisioners
 reconcile ownership and permissions when they run again. The RabbitMQ
 provisioner also reconciles the service password from the runtime Secret.
 
-Attune `0.5.3` creates the bootstrap identity with the development password
+Attune `0.6.0` creates the bootstrap identity with the development password
 `TestPass123!`. Change that password after the first login. The current
 `init-user` image does not honor a custom `bootstrap.testUser.password` value.
 
@@ -410,6 +411,196 @@ Kubernetes cannot change a bound PVC from RWO to RWX. Back up and copy each
 shared volume into a new RWX claim, verify the copy, and retain the old volume
 until the migrated workload has been tested. Deleting a PVC can delete its
 backing volume when the reclaim policy is `Delete`.
+
+## Use RWX-free object storage
+
+Set one storage mode for the release. The chart configures Attune to use an
+existing S3 bucket or GCS bucket. It does not create buckets, KMS keys, IAM
+roles, workload-identity bindings, or other cloud resources.
+
+```yaml
+storage:
+  mode: object
+  object:
+    provider: s3
+    bucket: company-attune
+    prefix: production
+    region: us-east-1
+    kmsKey: arn:aws:kms:us-east-1:123456789012:key/example
+
+serviceAccounts:
+  api:
+    annotations:
+      eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/attune-api
+  supervisor:
+    annotations:
+      eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/attune-supervisor
+```
+
+GCS does not use `region` or `kmsKey`. Put its Workload Identity annotation on
+the same two service accounts. Workers authenticate to the Attune API and do
+not receive bucket identity. Object mode creates no shared pack, runtime, or
+artifact claims. It uses size-limited `emptyDir` volumes for local pack and
+runtime caches and artifact staging. Runtime log buffering is in memory, not in
+an `emptyDir`.
+
+When `kmsKey` selects an AWS customer-managed KMS key, grant each service
+account that accesses encrypted objects, including the API and supervisor,
+`kms:Encrypt`, `kms:Decrypt`, `kms:GenerateDataKey`, and `kms:DescribeKey` on
+that key. The IAM policy and the KMS key policy must both allow the roles, and
+the key must be in the S3 bucket's region.
+
+Object-mode Pods set only `fsGroup: 1000` and `fsGroupChangePolicy:
+OnRootMismatch` by default. Kubernetes gives that group write access to local
+volumes and adds it as a supplementary group without changing the UID supplied
+by an action-worker or sensor-worker image. Override these fields under
+`storage.local.podSecurityContext` if UID 1000 is not the installation's shared
+write group.
+
+For caches that should survive container restarts within the same Pod, opt into
+Kubernetes generic ephemeral volumes:
+
+```yaml
+storage:
+  mode: object
+  local:
+    mode: genericEphemeralVolume
+    packs:
+      sizeLimit: 2Gi
+      storageClassName: fast-rwo
+    runtimeEnvs:
+      sizeLimit: 10Gi
+      storageClassName: fast-rwo
+```
+
+The chart puts an inline `volumeClaimTemplate` on each action-worker and
+sensor-worker Pod for both caches. Kubernetes dynamically provisions each claim
+as `ReadWriteOnce`, schedules the Pod with its claims, and deletes them with the
+Pod. Claims are never shared between Pods. A replacement Pod gets empty caches
+and rebuilds them from object storage. The API and artifact staging continue to
+use bounded `emptyDir` volumes. This mode requires a storage class that supports
+dynamic provisioning and Kubernetes 1.23 or newer.
+
+Set the per-stream loss window under `artifacts`:
+
+```yaml
+artifacts:
+  logSegmentMaxBytes: 65536
+  flushIntervalMs: 500
+```
+
+Each action stdout stream, action stderr stream, and managed-sensor stream can
+hold at most `logSegmentMaxBytes` accepted but uncommitted bytes. Reaching the
+byte limit applies backpressure until the commit finishes. Partial segments
+start committing within `flushIntervalMs` under normal runtime scheduling. The
+storage request has no finite duration bound, so data remains uncommitted until
+that request completes or fails. A forced Pod termination can lose the accepted
+bytes whose commit has not completed. A graceful action shutdown waits for both
+streams to flush and seal.
+
+The chart leaves application `resources` empty, so include this buffer in your
+own memory requests. Add
+`4 * max_concurrent_tasks * logSegmentMaxBytes` to each action-worker Pod's
+normal request. The factor of four covers stdout and stderr plus a peak
+segment-sized handoff allocation beside each stream buffer. The default worker
+concurrency of 10 and default segment size need 2.5 MiB. Add twice the segment
+size per concurrently active managed-sensor stream. Leave headroom for request
+bodies and allocator overhead. The executor's workflow logger commits each
+entry directly and does not hold this in-memory segment buffer.
+
+The API checks object storage before it starts listening for traffic. For S3,
+enable bucket versioning and grant the API service account
+`s3:GetBucketVersioning`, `s3:PutObject`, `s3:GetObject`,
+`s3:GetObjectVersion`, `s3:DeleteObject`, `s3:DeleteObjectVersion`, and
+`s3:AbortMultipartUpload` for the configured bucket and prefix. A disabled or
+suspended bucket is rejected. For GCS, grant `storage.objects.create`,
+`storage.objects.get`, and `storage.objects.delete`; reads must accept a
+specific generation and deletes must accept a generation-match precondition.
+The configured prefix must allow temporary `.attune-preflight/` and
+`.attune-upload/` objects. Startup fails with the provider and bucket name when
+any required operation is unavailable.
+
+### Migrate from shared volumes
+
+The chart treats `sharedVolume` to `object` as an explicit one-time cutover. On
+an actual Helm upgrade, it checks the live release ConfigMap and the three
+legacy PVC names. If the previous release was not using object storage and any
+legacy claim exists, rendering fails unless
+`storage.object.migrateFromSharedVolume` is `true`. A fresh object-mode install
+creates no shared claims and does not run this migration.
+
+Use this operator flow:
+
+1. Back up the Attune database, all three shared PVCs, and the target object
+   bucket. Test that the backups can be restored.
+2. Block ingress and other API clients. Stop producers, then scale the Attune
+   Deployments to zero with `kubectl --namespace attune scale deployment
+   --selector app.kubernetes.io/instance=attune --replicas=0`. Wait until no
+   Attune application or worker Pods remain. Keep PostgreSQL and RabbitMQ up.
+3. Put the complete object storage and workload-identity configuration in the
+   values file. Leave `migrateFromSharedVolume: false` in that file.
+4. Run the cutover once by adding
+   `--set storage.object.migrateFromSharedVolume=true` to the normal `helm
+   upgrade` command. Use `--wait --wait-for-jobs`; do not use automatic
+   rollback. The pre-upgrade hooks use the target API and supervisor images,
+   target config, runtime Secret, and separate service accounts with the target
+   workload-identity annotations. Helm
+   first runs `attune-api --upgrade-pack-releases`, then runs
+   `attune-supervisor migrate-storage`. Both mount the legacy packs and
+   artifacts claims. Either command failing stops the upgrade.
+
+   ```bash
+   helm upgrade attune attune/attune \
+     --namespace attune \
+     --values object-values.yaml \
+     --set storage.object.migrateFromSharedVolume=true \
+     --wait \
+     --wait-for-jobs \
+     --timeout 60m
+   ```
+5. If a hook fails, keep writes stopped, inspect the failed Job, correct the
+   cause, and retry the same Helm command. Both application commands must be
+   idempotent. The deployed ConfigMap remains in shared-volume mode until the
+   pre-upgrade migration succeeds.
+6. After Helm succeeds, verify pack releases, object digests, artifacts, and
+   runtime logs before restoring clients and producers. Future upgrades must
+   use `migrateFromSharedVolume: false`. The chart also reads the deployed
+   object-storage config, so retained PVCs do not trigger or replay the
+   migration on later object-mode upgrades.
+
+The chart leaves the three shared PVCs unmounted and annotates them with
+`helm.sh/resource-policy: keep`. Helm also keeps them on uninstall. Delete the
+retained claims manually only after the migration and restore procedure have
+been tested and the retention period has passed.
+
+Rollback has a hard data boundary. Shared volumes cannot represent writes that
+Attune accepts into object storage after cutover. Do not claim or attempt an
+automatic rollback to `sharedVolume`. Stop writes first, then use a tested
+reverse migration or restore the pre-cutover database and PVC backups as one
+consistent set.
+
+On an object-mode upgrade, the core pack bootstrap is a `post-upgrade` hook. It
+waits for `/health/ready` through a Service that selects only API Pods carrying
+the target Helm release revision, then publishes the bundled pack through the
+authenticated upload API. Old API Pods cannot satisfy this gate.
+Shared-volume upgrades keep the bootstrap as a `pre-upgrade` hook. Executor and
+worker init containers then wait for the active core pack through the API.
+Per-service storage modes are rejected by the values schema.
+
+Run a disruption test against a dedicated three-node test release. The command
+hooks must generate pack, runtime, artifact, and log activity and verify mixed
+releases, object digests, log segment sequences, and pending-upload age.
+
+```bash
+ATTUNE_ALLOW_DISRUPTION=true \
+ATTUNE_DISRUPTION_WORKLOAD_COMMAND='./test/generate-object-load.sh' \
+ATTUNE_DISRUPTION_VERIFY_COMMAND='./test/verify-object-invariants.sh' \
+  ./scripts/test-object-mode-disruption.sh \
+    --namespace attune-object-test \
+    --release attune \
+    --duration-seconds 86400 \
+    --output object-mode-disruption.tsv
+```
 
 ## Use external infrastructure
 
