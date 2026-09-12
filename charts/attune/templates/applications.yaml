@@ -78,8 +78,8 @@ spec:
           command: ["/bin/sh", "-ec"]
           args:
             - |
-              until [ -f /opt/attune/packs/core/pack.yaml ]; do
-                echo "waiting for packs";
+              until [ -f /opt/attune/packs/.attune-bootstrap-r{{ .Release.Revision }} ]; do
+                echo "waiting for current pack bootstrap";
                 sleep 2;
               done
           volumeMounts:
@@ -205,22 +205,7 @@ spec:
         {{- if and .Values.rabbitmq.enabled .Values.rabbitmq.provisioning.enabled }}
         {{- include "attune.waitForRabbitmqCredentials" . | nindent 8 }}
         {{- end }}
-        {{- if eq .Values.storage.mode "object" }}
         {{- include "attune.waitForCorePack" . | nindent 8 }}
-        {{- else }}
-        - name: wait-for-packs
-          image: busybox:1.36
-          command: ["/bin/sh", "-ec"]
-          args:
-            - |
-              until [ -f /opt/attune/packs/core/pack.yaml ]; do
-                echo "waiting for packs";
-                sleep 2;
-              done
-          volumeMounts:
-            - name: packs
-              mountPath: /opt/attune/packs
-        {{- end }}
       containers:
         - name: executor
           image: {{ include "attune.image" (dict "root" . "image" .Values.images.executor) | quote }}

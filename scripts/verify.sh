@@ -371,6 +371,43 @@ if grep -q 'name: wait-for-packs' "$render_dir/attune-object.yaml"; then
   exit 1
 fi
 
+shared_bootstrap_marker='.attune-bootstrap-r1'
+if ! grep -q "$shared_bootstrap_marker" "$render_dir/attune-shared-volume.yaml"; then
+  printf 'shared-volume bootstrap does not use a revision-specific completion marker\n' >&2
+  exit 1
+fi
+if ! grep -Fq '.attune-bootstrap-r{{ .Release.Revision }}' "$root_dir/charts/attune/templates/jobs.yaml" || \
+   ! grep -Fq '.attune-bootstrap-r{{ .Release.Revision }}' "$root_dir/charts/attune/templates/applications.yaml"; then
+  printf 'shared-volume bootstrap marker is not tied to the Helm release revision\n' >&2
+  exit 1
+fi
+
+shared_api_wait="$({
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc 'select(.kind == "Deployment" and .spec.template.metadata.labels."app.kubernetes.io/component" == "api") | .spec.template.spec.initContainers[] | select(.name == "wait-for-packs") | .args[0]' - \
+    < "$render_dir/attune-shared-volume.yaml"
+})"
+if [[ "$shared_api_wait" != *"$shared_bootstrap_marker"* ]]; then
+  printf 'shared-volume API does not wait for the current bootstrap marker\n' >&2
+  exit 1
+fi
+
+if grep -q 'name: wait-for-packs' "$render_dir/attune-shared-volume.yaml" && \
+   [[ "$(grep -c 'name: wait-for-packs' "$render_dir/attune-shared-volume.yaml")" -ne 1 ]]; then
+  printf 'shared-volume consumers still use filesystem-only pack readiness\n' >&2
+  exit 1
+fi
+
+shared_core_wait_count="$({
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc '[select(.kind == "Deployment") | .spec.template.spec.initContainers[] | select(.name == "wait-for-core-pack")] | length' - \
+    < "$render_dir/attune-shared-volume.yaml"
+})"
+if [[ "$shared_core_wait_count" -ne 3 ]]; then
+  printf 'shared-volume consumers do not wait for API pack readiness\n' >&2
+  exit 1
+fi
+
 object_init_packs_hook="$({
   docker run --rm -i mikefarah/yq:4.47.2 \
     eval-all --no-doc 'select(.kind == "Job" and .metadata.labels."app.kubernetes.io/component" == "init-packs") | .metadata.annotations."helm.sh/hook"' - \
@@ -386,8 +423,8 @@ object_init_packs_script="$({
     eval-all --no-doc 'select(.kind == "Job" and .metadata.labels."app.kubernetes.io/component" == "init-packs") | .spec.template.spec.containers[] | select(.name == "init-packs") | .args[0]' - \
     < "$render_dir/attune-object-upgrade.yaml"
 })"
-if [[ "$object_init_packs_script" != *'ATTUNE_API_URL'*/health/ready* || "$object_init_packs_script" != *'waiting for api'* ]]; then
-  printf 'object-mode init-packs does not wait for API readiness before bootstrap\n' >&2
+if [[ "$object_init_packs_script" != *'ATTUNE_API_URL'*/health* || "$object_init_packs_script" == *'/health/ready'* || "$object_init_packs_script" != *'waiting for api'* ]]; then
+  printf 'object-mode init-packs does not wait for basic API health before bootstrap\n' >&2
   exit 1
 fi
 

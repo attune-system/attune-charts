@@ -580,9 +580,10 @@ reverse migration or restore the pre-cutover database and PVC backups as one
 consistent set.
 
 On an object-mode upgrade, the core pack bootstrap is a `post-upgrade` hook. It
-waits for `/health/ready` through a Service that selects only API Pods carrying
-the target Helm release revision, then publishes the bundled pack through the
-authenticated upload API. Old API Pods cannot satisfy this gate.
+waits for `/health` through a Service that selects only API Pods carrying the
+target Helm release revision, then publishes the bundled pack through the
+authenticated upload API. It uses a temporary integration identity rather than
+the initial administrator password. Old API Pods cannot satisfy this gate.
 Shared-volume upgrades keep the bootstrap as a `pre-upgrade` hook. Executor and
 worker init containers then wait for the active core pack through the API.
 Per-service storage modes are rejected by the values schema.

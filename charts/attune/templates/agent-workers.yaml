@@ -77,22 +77,7 @@ spec:
           envFrom:
             - secretRef:
                 name: {{ include "attune.secretName" $ | quote }}
-        {{- if eq $.Values.storage.mode "object" }}
         {{- include "attune.waitForCorePack" $ | nindent 8 }}
-        {{- else }}
-        - name: wait-for-packs
-          image: busybox:1.36
-          command: ["/bin/sh", "-ec"]
-          args:
-            - |
-              until [ -f /opt/attune/packs/core/pack.yaml ]; do
-                echo "waiting for packs";
-                sleep 2;
-              done
-          volumeMounts:
-            - name: packs
-              mountPath: /opt/attune/packs
-        {{- end }}
         {{- if and $.Values.rabbitmq.enabled $.Values.rabbitmq.provisioning.enabled }}
         {{- include "attune.waitForRabbitmqCredentials" $ | nindent 8 }}
         {{- else }}
@@ -250,22 +235,7 @@ spec:
           envFrom:
             - secretRef:
                 name: {{ include "attune.secretName" $ | quote }}
-        {{- if eq $.Values.storage.mode "object" }}
         {{- include "attune.waitForCorePack" $ | nindent 8 }}
-        {{- else }}
-        - name: wait-for-packs
-          image: busybox:1.36
-          command: ["/bin/sh", "-ec"]
-          args:
-            - |
-              until [ -f /opt/attune/packs/core/pack.yaml ]; do
-                echo "waiting for packs";
-                sleep 2;
-              done
-          volumeMounts:
-            - name: packs
-              mountPath: /opt/attune/packs
-        {{- end }}
         {{- if and $.Values.rabbitmq.enabled $.Values.rabbitmq.provisioning.enabled }}
         {{- include "attune.waitForRabbitmqCredentials" $ | nindent 8 }}
         {{- else }}

@@ -187,9 +187,6 @@ securityContext:
   env:
     - name: ATTUNE_API_URL
       value: {{ printf "http://%s:%v" (include "attune.apiServiceName" .) .Values.api.service.port | quote }}
-  envFrom:
-    - secretRef:
-        name: {{ include "attune.secretName" . | quote }}
 {{- end -}}
 
 {{- define "attune.waitForDatabaseCredentials" -}}

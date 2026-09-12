@@ -141,7 +141,7 @@ spec:
               import urllib.request
 
               with urllib.request.urlopen(
-                  f"{os.environ['ATTUNE_API_URL']}/health/ready", timeout=5
+                  f"{os.environ['ATTUNE_API_URL']}/health", timeout=5
               ) as response:
                   raise SystemExit(0 if 200 <= response.status < 300 else 1)
               PY
@@ -180,7 +180,11 @@ spec:
                 echo "waiting for database schema";
                 sleep 2;
               done
-              exec /init-packs.sh
+              /init-packs.sh
+              marker=/opt/attune/packs/.attune-bootstrap-r{{ .Release.Revision }}
+              temporary="${marker}.tmp.$$"
+              : > "${temporary}"
+              mv "${temporary}" "${marker}"
               {{- end }}
           {{- if eq .Values.storage.mode "sharedVolume" }}
           volumeMounts:
