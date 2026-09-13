@@ -5,7 +5,7 @@ entries:
     appVersion: 0.6.1
     created: "2026-09-12T23:48:55.020297874-05:00"
     description: Helm chart for deploying the Attune automation platform
-    digest: 00b912810a1cd01928a549e4578de88b17188cc03fdcde62df91a5a75aebcd5d
+    digest: 5a4af3f97b5992b6aa8f376dc2e48cda14b5e6ecd3244b67ba3fcf9daa852241
     home: https://github.com/attune-system/attune
     name: attune
     sources:

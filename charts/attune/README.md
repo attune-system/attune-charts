@@ -55,7 +55,10 @@ hour of inactivity for API streams. Preserve the
 annotations. PostgreSQL leases limit execution-log streams to 100 across all
 API Pods and 5 per signed identity by default. Each API Pod renews its leases
 every 10 seconds. PostgreSQL recovers leases from a crashed Pod after 45
-seconds. Configure these values with `api.executionLogStreams`.
+seconds. `leaseSeconds` must exceed twice `heartbeatSeconds`, which gives a
+scheduled renewal a full heartbeat interval before the API's conservative
+local lease-loss deadline. Configure these values with
+`api.executionLogStreams`.
 
 Install the release:
 

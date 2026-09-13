@@ -22,8 +22,8 @@
 {{- if gt (int .Values.api.executionLogStreams.perIdentityLimit) (int .Values.api.executionLogStreams.globalLimit) }}
 {{- fail "api.executionLogStreams.perIdentityLimit cannot exceed globalLimit" }}
 {{- end }}
-{{- if le (int .Values.api.executionLogStreams.leaseSeconds) (int .Values.api.executionLogStreams.heartbeatSeconds) }}
-{{- fail "api.executionLogStreams.leaseSeconds must exceed heartbeatSeconds" }}
+{{- if le (int .Values.api.executionLogStreams.leaseSeconds) (mul (int .Values.api.executionLogStreams.heartbeatSeconds) 2) }}
+{{- fail "api.executionLogStreams.leaseSeconds must exceed twice heartbeatSeconds" }}
 {{- end }}
 {{- $requiredDatabaseConnections := int .Values.database.connectionReserve }}
 {{- range $service := list .Values.api .Values.executor .Values.supervisor .Values.notifier }}

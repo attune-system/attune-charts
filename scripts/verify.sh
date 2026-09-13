@@ -109,12 +109,18 @@ fi
 
 if helm template verify "$root_dir/charts/attune" \
   --set security.existingSecret=attune-service-secrets \
-  --set api.executionLogStreams.leaseSeconds=10 \
+  --set api.executionLogStreams.leaseSeconds=20 \
   --set api.executionLogStreams.heartbeatSeconds=10 \
   > /dev/null 2>&1; then
-  printf 'execution log stream lease rendered without time to heartbeat\n' >&2
+  printf 'execution log stream lease rendered without a full renewal retry interval\n' >&2
   exit 1
 fi
+
+helm template verify "$root_dir/charts/attune" \
+  --set security.existingSecret=attune-service-secrets \
+  --set api.executionLogStreams.leaseSeconds=21 \
+  --set api.executionLogStreams.heartbeatSeconds=10 \
+  > /dev/null
 
 if helm template verify "$root_dir/charts/attune" \
   --set security.existingSecret=attune-service-secrets \
