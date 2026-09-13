@@ -49,6 +49,12 @@ The CLI uses the same public origin for watched commands. Override it with
 `--notifier-url` or `ATTUNE_NOTIFIER_WS_URL`; both values are WebSocket base
 URLs, so use `wss://attune.example.com` rather than appending `/ws`.
 
+The web nginx and nginx-ingress defaults disable proxy buffering and allow one
+hour of inactivity for API streams. Preserve the
+`nginx.ingress.kubernetes.io/proxy-*` annotations when adding custom ingress
+annotations. The API limits execution-log streams to 100 per Pod and 5 per
+identity by default. Configure these with `api.executionLogStreams`.
+
 Install the release:
 
 ```bash
@@ -171,6 +177,13 @@ these tables.
 | CloudNativePG | `database.postgresql.enabled: false` and `database.host: <cluster>-rw` | A ready CNPG `Cluster` with the required extensions |
 | Bundled | `database.postgresql.enabled: true` and `database.postgresql.provisioning.enabled: true` | A PostgreSQL administrator Secret |
 | External | `database.postgresql.enabled: false` and an external `database.host` | A provisioned database, role, schema, and extensions |
+
+Every long-running database client has an explicit pool budget under its
+service values. The defaults are `api.maxDatabaseConnections: 30`,
+`executor.maxDatabaseConnections: 20`, and 10 each for the supervisor,
+notifier, action-worker Pods, and sensor-worker Pods. These values apply per
+Pod. Multiply each budget by its replica count when sizing PostgreSQL, and add
+room for chart Jobs and operator access.
 
 | RabbitMQ mode | Chart settings | Prerequisite |
 | --- | --- | --- |

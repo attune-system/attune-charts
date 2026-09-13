@@ -19,6 +19,12 @@
 {{- if and .Values.mcp.enabled (not .Values.mcp.auth.useBootstrapTestUser) (empty .Values.mcp.auth.existingSecret) }}
 {{- fail "mcp.auth.existingSecret is required when MCP does not use the bootstrap identity" }}
 {{- end }}
+{{- if gt (int .Values.api.executionLogStreams.perIdentityLimit) (int .Values.api.executionLogStreams.globalLimit) }}
+{{- fail "api.executionLogStreams.perIdentityLimit cannot exceed globalLimit" }}
+{{- end }}
+{{- if le (int .Values.api.terminationGracePeriodSeconds) (int .Values.api.shutdownGracePeriodSeconds) }}
+{{- fail "api.terminationGracePeriodSeconds must exceed shutdownGracePeriodSeconds" }}
+{{- end }}
 {{- if and (eq .Values.storage.mode "object") (empty .Values.storage.object.bucket) }}
 {{- fail "storage.object.bucket is required when storage.mode is object" }}
 {{- end }}
@@ -169,9 +175,12 @@ data:
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_set_header X-Forwarded-Proto $scheme;
             proxy_cache_bypass $http_upgrade;
+            proxy_buffering off;
+            proxy_request_buffering off;
+            gzip off;
             proxy_connect_timeout 60s;
-            proxy_send_timeout 60s;
-            proxy_read_timeout 60s;
+            proxy_send_timeout 1h;
+            proxy_read_timeout 1h;
         }
 
         location = /ws {

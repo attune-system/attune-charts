@@ -96,6 +96,8 @@ spec:
               value: /opt/attune/config.yaml
             - name: ATTUNE__DATABASE__SCHEMA
               value: {{ $.Values.database.schema | quote }}
+            - name: ATTUNE__DATABASE__MAX_CONNECTIONS
+              value: {{ .maxDatabaseConnections | default 10 | quote }}
             - name: ATTUNE_WORKER_TYPE
               value: container
             - name: ATTUNE_WORKER_NAME
@@ -254,6 +256,8 @@ spec:
               value: /opt/attune/config.yaml
             - name: ATTUNE__DATABASE__SCHEMA
               value: {{ $.Values.database.schema | quote }}
+            - name: ATTUNE__DATABASE__MAX_CONNECTIONS
+              value: {{ .maxDatabaseConnections | default 10 | quote }}
             - name: ATTUNE__WORKER__WORKER_TYPE
               value: container
             - name: ATTUNE_API_URL

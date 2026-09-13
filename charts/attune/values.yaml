@@ -244,6 +244,13 @@ jobs:
 
 api:
   replicaCount: 1
+  # Pool budget per API Pod. Total API connections are this value times replicaCount.
+  maxDatabaseConnections: 30
+  executionLogStreams:
+    globalLimit: 100
+    perIdentityLimit: 5
+  shutdownGracePeriodSeconds: 25
+  terminationGracePeriodSeconds: 30
   service:
     type: ClusterIP
     port: 8080
@@ -251,14 +258,17 @@ api:
 
 executor:
   replicaCount: 1
+  maxDatabaseConnections: 20
   resources: {}
 
 supervisor:
   replicaCount: 1
+  maxDatabaseConnections: 10
   resources: {}
 
 notifier:
   replicaCount: 1
+  maxDatabaseConnections: 10
   service:
     type: ClusterIP
     port: 8081
@@ -292,7 +302,10 @@ web:
   ingress:
     enabled: false
     className: ""
-    annotations: {}
+    annotations:
+      nginx.ingress.kubernetes.io/proxy-buffering: "off"
+      nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+      nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
     hosts:
       - host: attune.local
         paths:
@@ -321,12 +334,14 @@ web:
 #   nodeSelector     (optional) - Node selector map for pod scheduling
 #   tolerations      (optional) - Tolerations list for pod scheduling
 #   stopGracePeriod  (optional) - Termination grace period in seconds (default: 45)
+#   maxDatabaseConnections (optional) - Database pool budget per worker Pod (default: 10)
 #
 # Default action workers mirror the Docker Compose agent deployment model.
 actionWorkers:
   - name: full
     image: nikolaik/python-nodejs:python3.12-nodejs22-slim
     replicas: 1
+    maxDatabaseConnections: 10
     runtimes: [shell, python, node, native]
     resources: {}
 
@@ -335,6 +350,7 @@ sensorWorkers:
   - name: default
     image: nikolaik/python-nodejs:python3.12-nodejs22-slim
     replicas: 1
+    maxDatabaseConnections: 10
     runtimes: [shell, python, node, native]
     logLevel: debug
     # The default notifier endpoint is plaintext inside the cluster network.

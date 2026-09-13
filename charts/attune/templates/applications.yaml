@@ -51,6 +51,7 @@ spec:
       annotations:
         attune.dev/release-revision: {{ .Release.Revision | quote }}
     spec:
+      terminationGracePeriodSeconds: {{ .Values.api.terminationGracePeriodSeconds }}
       {{- if eq .Values.storage.mode "object" }}
       {{- include "attune.localStoragePodSecurityContext" . | nindent 6 }}
       serviceAccountName: {{ include "attune.apiServiceAccountName" . | quote }}
@@ -107,6 +108,14 @@ spec:
               value: /opt/attune/config.yaml
             - name: ATTUNE__DATABASE__SCHEMA
               value: {{ .Values.database.schema | quote }}
+            - name: ATTUNE__DATABASE__MAX_CONNECTIONS
+              value: {{ .Values.api.maxDatabaseConnections | quote }}
+            - name: ATTUNE__SERVER__EXECUTION_LOG_STREAM_GLOBAL_LIMIT
+              value: {{ .Values.api.executionLogStreams.globalLimit | quote }}
+            - name: ATTUNE__SERVER__EXECUTION_LOG_STREAM_PER_IDENTITY_LIMIT
+              value: {{ .Values.api.executionLogStreams.perIdentityLimit | quote }}
+            - name: ATTUNE__SERVER__SHUTDOWN_GRACE_PERIOD
+              value: {{ .Values.api.shutdownGracePeriodSeconds | quote }}
             - name: ATTUNE__WORKER__WORKER_TYPE
               value: container
           ports:
@@ -218,6 +227,8 @@ spec:
               value: /opt/attune/config.yaml
             - name: ATTUNE__DATABASE__SCHEMA
               value: {{ .Values.database.schema | quote }}
+            - name: ATTUNE__DATABASE__MAX_CONNECTIONS
+              value: {{ .Values.executor.maxDatabaseConnections | quote }}
             - name: ATTUNE__WORKER__WORKER_TYPE
               value: container
             - name: ATTUNE_API_URL
@@ -303,6 +314,8 @@ spec:
               value: /opt/attune/config.yaml
             - name: ATTUNE__DATABASE__SCHEMA
               value: {{ .Values.database.schema | quote }}
+            - name: ATTUNE__DATABASE__MAX_CONNECTIONS
+              value: {{ .Values.supervisor.maxDatabaseConnections | quote }}
           resources:
             {{- toYaml .Values.supervisor.resources | nindent 12 }}
           volumeMounts:
@@ -386,6 +399,8 @@ spec:
               value: /opt/attune/config.yaml
             - name: ATTUNE__DATABASE__SCHEMA
               value: {{ .Values.database.schema | quote }}
+            - name: ATTUNE__DATABASE__MAX_CONNECTIONS
+              value: {{ .Values.notifier.maxDatabaseConnections | quote }}
             - name: ATTUNE__WORKER__WORKER_TYPE
               value: container
           ports:

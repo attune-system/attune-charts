@@ -374,10 +374,22 @@
     "api": {
       "type": "object",
       "additionalProperties": true,
-      "required": ["replicaCount", "service"],
+      "required": ["replicaCount", "maxDatabaseConnections", "executionLogStreams", "shutdownGracePeriodSeconds", "terminationGracePeriodSeconds", "service"],
       "not": { "anyOf": [{ "required": ["storage"] }, { "required": ["storageMode"] }] },
       "properties": {
         "replicaCount": { "$ref": "#/definitions/replicas" },
+        "maxDatabaseConnections": { "$ref": "#/definitions/databaseConnections" },
+        "executionLogStreams": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["globalLimit", "perIdentityLimit"],
+          "properties": {
+            "globalLimit": { "type": "integer", "minimum": 1 },
+            "perIdentityLimit": { "type": "integer", "minimum": 1 }
+          }
+        },
+        "shutdownGracePeriodSeconds": { "type": "integer", "minimum": 1 },
+        "terminationGracePeriodSeconds": { "type": "integer", "minimum": 1 },
         "service": { "$ref": "#/definitions/service" },
         "resources": { "$ref": "#/definitions/resources" }
       }
@@ -385,29 +397,32 @@
     "executor": {
       "type": "object",
       "additionalProperties": true,
-      "required": ["replicaCount"],
+      "required": ["replicaCount", "maxDatabaseConnections"],
       "not": { "anyOf": [{ "required": ["storage"] }, { "required": ["storageMode"] }] },
       "properties": {
         "replicaCount": { "$ref": "#/definitions/replicas" },
+        "maxDatabaseConnections": { "$ref": "#/definitions/databaseConnections" },
         "resources": { "$ref": "#/definitions/resources" }
       }
     },
     "supervisor": {
       "type": "object",
       "additionalProperties": true,
-      "required": ["replicaCount"],
+      "required": ["replicaCount", "maxDatabaseConnections"],
       "not": { "anyOf": [{ "required": ["storage"] }, { "required": ["storageMode"] }] },
       "properties": {
         "replicaCount": { "$ref": "#/definitions/replicas" },
+        "maxDatabaseConnections": { "$ref": "#/definitions/databaseConnections" },
         "resources": { "$ref": "#/definitions/resources" }
       }
     },
     "notifier": {
       "type": "object",
       "additionalProperties": true,
-      "required": ["replicaCount", "service"],
+      "required": ["replicaCount", "maxDatabaseConnections", "service"],
       "properties": {
         "replicaCount": { "$ref": "#/definitions/replicas" },
+        "maxDatabaseConnections": { "$ref": "#/definitions/databaseConnections" },
         "service": { "$ref": "#/definitions/service" },
         "resources": { "$ref": "#/definitions/resources" }
       }
@@ -490,6 +505,10 @@
     "replicas": {
       "type": "integer",
       "minimum": 0
+    },
+    "databaseConnections": {
+      "type": "integer",
+      "minimum": 5
     },
     "secretKey": {
       "type": "string",
@@ -791,7 +810,8 @@
           "type": "array",
           "items": { "$ref": "#/definitions/toleration" }
         },
-        "stopGracePeriod": { "type": "integer", "minimum": 1 }
+        "stopGracePeriod": { "type": "integer", "minimum": 1 },
+        "maxDatabaseConnections": { "$ref": "#/definitions/databaseConnections" }
       }
     },
     "actionWorker": {

@@ -87,6 +87,48 @@ if [[ "$notifier_port" != 8081 ]]; then
   exit 1
 fi
 
+database_budget_count="$({
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc '[select(.kind == "Deployment") as $deployment | $deployment.spec.template.spec.containers[] | .env[]? | select(.name == "ATTUNE__DATABASE__MAX_CONNECTIONS") | select((($deployment.spec.template.metadata.labels."app.kubernetes.io/component" == "api") and .value == "30") or (($deployment.spec.template.metadata.labels."app.kubernetes.io/component" == "executor") and .value == "20") or (($deployment.spec.template.metadata.labels."app.kubernetes.io/component" | test("^(supervisor|notifier|action-worker-|sensor-worker-)")) and .value == "10"))] | length' - \
+    < "$render_dir/attune-cnpg.yaml"
+})"
+if [[ "$database_budget_count" -ne 6 ]]; then
+  printf 'rendered workloads are missing explicit database connection budgets\n' >&2
+  exit 1
+fi
+
+api_stream_settings_count="$({
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc '[select(.kind == "Deployment" and .spec.template.metadata.labels."app.kubernetes.io/component" == "api" and .spec.template.spec.terminationGracePeriodSeconds == 30) | .spec.template.spec.containers[] | select(.name == "api") | .env[] | select((.name == "ATTUNE__SERVER__EXECUTION_LOG_STREAM_GLOBAL_LIMIT" and .value == "100") or (.name == "ATTUNE__SERVER__EXECUTION_LOG_STREAM_PER_IDENTITY_LIMIT" and .value == "5") or (.name == "ATTUNE__SERVER__SHUTDOWN_GRACE_PERIOD" and .value == "25"))] | length' - \
+    < "$render_dir/attune-cnpg.yaml"
+})"
+if [[ "$api_stream_settings_count" -ne 3 ]]; then
+  printf 'rendered API stream limits or shutdown grace period differ from defaults\n' >&2
+  exit 1
+fi
+
+nginx_config="$({
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc 'select(.kind == "ConfigMap") | .data."nginx.conf"' - \
+    < "$render_dir/attune-cnpg.yaml"
+})"
+for directive in 'proxy_buffering off;' 'proxy_request_buffering off;' 'proxy_read_timeout 1h;' 'proxy_send_timeout 1h;'; do
+  if [[ "$nginx_config" != *"$directive"* ]]; then
+    printf 'web nginx config is missing SSE directive: %s\n' "$directive" >&2
+    exit 1
+  fi
+done
+
+ingress_stream_annotations="$({
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc 'select(.kind == "Ingress") | [.metadata.annotations."nginx.ingress.kubernetes.io/proxy-buffering", .metadata.annotations."nginx.ingress.kubernetes.io/proxy-read-timeout", .metadata.annotations."nginx.ingress.kubernetes.io/proxy-send-timeout"] | join(",")' - \
+    < "$render_dir/attune-cnpg.yaml"
+})"
+if [[ "$ingress_stream_annotations" != "off,3600,3600" ]]; then
+  printf 'ingress SSE buffering and timeout defaults are missing\n' >&2
+  exit 1
+fi
+
 migration_database_url_override_count="$({
   docker run --rm -i mikefarah/yq:4.47.2 \
     eval-all --no-doc '[select(.kind == "Job" and .metadata.labels."app.kubernetes.io/component" == "migrations") | .spec.template.spec.containers[] | select(.name == "migrations") | .env[] | select(.name == "ATTUNE__DATABASE__URL" and .value == "")] | length' - \
