@@ -89,7 +89,7 @@ fi
 
 database_budget_count="$({
   docker run --rm -i mikefarah/yq:4.47.2 \
-    eval-all --no-doc '[select(.kind == "Deployment") as $deployment | $deployment.spec.template.spec.containers[] | .env[]? | select(.name == "ATTUNE__DATABASE__MAX_CONNECTIONS") | select((($deployment.spec.template.metadata.labels."app.kubernetes.io/component" == "api") and .value == "30") or (($deployment.spec.template.metadata.labels."app.kubernetes.io/component" == "executor") and .value == "20") or (($deployment.spec.template.metadata.labels."app.kubernetes.io/component" | test("^(supervisor|notifier|action-worker-|sensor-worker-)")) and .value == "10"))] | length' - \
+    eval-all --no-doc '[select(.kind == "Deployment") as $deployment | $deployment.spec.template.spec.containers[] | .env[]? | select(.name == "ATTUNE__DATABASE__MAX_CONNECTIONS") | select((($deployment.spec.template.metadata.labels."app.kubernetes.io/component" | test("^(api|executor)$")) and .value == "10") or (($deployment.spec.template.metadata.labels."app.kubernetes.io/component" | test("^(supervisor|notifier|action-worker-|sensor-worker-)")) and .value == "5"))] | length' - \
     < "$render_dir/attune-cnpg.yaml"
 })"
 if [[ "$database_budget_count" -ne 6 ]]; then
@@ -99,11 +99,28 @@ fi
 
 api_stream_settings_count="$({
   docker run --rm -i mikefarah/yq:4.47.2 \
-    eval-all --no-doc '[select(.kind == "Deployment" and .spec.template.metadata.labels."app.kubernetes.io/component" == "api" and .spec.template.spec.terminationGracePeriodSeconds == 30) | .spec.template.spec.containers[] | select(.name == "api") | .env[] | select((.name == "ATTUNE__SERVER__EXECUTION_LOG_STREAM_GLOBAL_LIMIT" and .value == "100") or (.name == "ATTUNE__SERVER__EXECUTION_LOG_STREAM_PER_IDENTITY_LIMIT" and .value == "5") or (.name == "ATTUNE__SERVER__SHUTDOWN_GRACE_PERIOD" and .value == "25"))] | length' - \
+    eval-all --no-doc '[select(.kind == "Deployment" and .spec.template.metadata.labels."app.kubernetes.io/component" == "api" and .spec.template.spec.terminationGracePeriodSeconds == 30) | .spec.template.spec.containers[] | select(.name == "api") | .env[] | select((.name == "ATTUNE__SERVER__EXECUTION_LOG_STREAM_GLOBAL_LIMIT" and .value == "100") or (.name == "ATTUNE__SERVER__EXECUTION_LOG_STREAM_PER_IDENTITY_LIMIT" and .value == "5") or (.name == "ATTUNE__SERVER__EXECUTION_LOG_STREAM_LEASE_SECONDS" and .value == "45") or (.name == "ATTUNE__SERVER__EXECUTION_LOG_STREAM_HEARTBEAT_SECONDS" and .value == "10") or (.name == "ATTUNE__SERVER__SHUTDOWN_GRACE_PERIOD" and .value == "25"))] | length' - \
     < "$render_dir/attune-cnpg.yaml"
 })"
-if [[ "$api_stream_settings_count" -ne 3 ]]; then
+if [[ "$api_stream_settings_count" -ne 5 ]]; then
   printf 'rendered API stream limits or shutdown grace period differ from defaults\n' >&2
+  exit 1
+fi
+
+if helm template verify "$root_dir/charts/attune" \
+  --set security.existingSecret=attune-service-secrets \
+  --set api.executionLogStreams.leaseSeconds=10 \
+  --set api.executionLogStreams.heartbeatSeconds=10 \
+  > /dev/null 2>&1; then
+  printf 'execution log stream lease rendered without time to heartbeat\n' >&2
+  exit 1
+fi
+
+if helm template verify "$root_dir/charts/attune" \
+  --set security.existingSecret=attune-service-secrets \
+  --set database.postgresql.maxConnections=99 \
+  > /dev/null 2>&1; then
+  printf 'bundled PostgreSQL rendered below the rolling connection budget\n' >&2
   exit 1
 fi
 

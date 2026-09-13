@@ -34,6 +34,7 @@ spec:
         - name: postgresql
           image: {{ printf "%s:%s" .Values.database.postgresql.image.repository .Values.database.postgresql.image.tag | quote }}
           imagePullPolicy: IfNotPresent
+          args: ["-c", {{ printf "max_connections=%d" (int .Values.database.postgresql.maxConnections) | quote }}]
           env:
             - name: POSTGRES_USER
               valueFrom:

@@ -22,6 +22,23 @@
 {{- if gt (int .Values.api.executionLogStreams.perIdentityLimit) (int .Values.api.executionLogStreams.globalLimit) }}
 {{- fail "api.executionLogStreams.perIdentityLimit cannot exceed globalLimit" }}
 {{- end }}
+{{- if le (int .Values.api.executionLogStreams.leaseSeconds) (int .Values.api.executionLogStreams.heartbeatSeconds) }}
+{{- fail "api.executionLogStreams.leaseSeconds must exceed heartbeatSeconds" }}
+{{- end }}
+{{- $requiredDatabaseConnections := int .Values.database.connectionReserve }}
+{{- range $service := list .Values.api .Values.executor .Values.supervisor .Values.notifier }}
+{{- $replicas := int $service.replicaCount }}
+{{- $rollingReplicas := add $replicas (div (add $replicas 3) 4) }}
+{{- $requiredDatabaseConnections = add $requiredDatabaseConnections (mul $rollingReplicas (int $service.maxDatabaseConnections)) }}
+{{- end }}
+{{- range $worker := concat .Values.actionWorkers .Values.sensorWorkers }}
+{{- $replicas := int (default 1 $worker.replicas) }}
+{{- $rollingReplicas := add $replicas (div (add $replicas 3) 4) }}
+{{- $requiredDatabaseConnections = add $requiredDatabaseConnections (mul $rollingReplicas (int (default 5 $worker.maxDatabaseConnections))) }}
+{{- end }}
+{{- if and .Values.database.postgresql.enabled (lt (int .Values.database.postgresql.maxConnections) $requiredDatabaseConnections) }}
+{{- fail (printf "database.postgresql.maxConnections must be at least %d for rolling application pools plus database.connectionReserve" $requiredDatabaseConnections) }}
+{{- end }}
 {{- if le (int .Values.api.terminationGracePeriodSeconds) (int .Values.api.shutdownGracePeriodSeconds) }}
 {{- fail "api.terminationGracePeriodSeconds must exceed shutdownGracePeriodSeconds" }}
 {{- end }}

@@ -54,8 +54,11 @@ database:
   database: attune
   host: ""
   port: 5432
+  # Connections kept outside application pools for Jobs, monitoring, and operators.
+  connectionReserve: 20
   postgresql:
     enabled: true
+    maxConnections: 100
     admin:
       # Set an existing administrator Secret before enabling provisioning.
       # Without one, the bundled database keeps the legacy shared account.
@@ -240,15 +243,18 @@ jobs:
   storageMigration:
     activeDeadlineSeconds: 3600
     ttlSecondsAfterFinished: 300
+    maxDatabaseConnections: 5
     resources: {}
 
 api:
   replicaCount: 1
   # Pool budget per API Pod. Total API connections are this value times replicaCount.
-  maxDatabaseConnections: 30
+  maxDatabaseConnections: 10
   executionLogStreams:
     globalLimit: 100
     perIdentityLimit: 5
+    leaseSeconds: 45
+    heartbeatSeconds: 10
   shutdownGracePeriodSeconds: 25
   terminationGracePeriodSeconds: 30
   service:
@@ -258,17 +264,17 @@ api:
 
 executor:
   replicaCount: 1
-  maxDatabaseConnections: 20
+  maxDatabaseConnections: 10
   resources: {}
 
 supervisor:
   replicaCount: 1
-  maxDatabaseConnections: 10
+  maxDatabaseConnections: 5
   resources: {}
 
 notifier:
   replicaCount: 1
-  maxDatabaseConnections: 10
+  maxDatabaseConnections: 5
   service:
     type: ClusterIP
     port: 8081
@@ -334,14 +340,14 @@ web:
 #   nodeSelector     (optional) - Node selector map for pod scheduling
 #   tolerations      (optional) - Tolerations list for pod scheduling
 #   stopGracePeriod  (optional) - Termination grace period in seconds (default: 45)
-#   maxDatabaseConnections (optional) - Database pool budget per worker Pod (default: 10)
+#   maxDatabaseConnections (optional) - Database pool budget per worker Pod (default: 5)
 #
 # Default action workers mirror the Docker Compose agent deployment model.
 actionWorkers:
   - name: full
     image: nikolaik/python-nodejs:python3.12-nodejs22-slim
     replicas: 1
-    maxDatabaseConnections: 10
+    maxDatabaseConnections: 5
     runtimes: [shell, python, node, native]
     resources: {}
 
@@ -350,7 +356,7 @@ sensorWorkers:
   - name: default
     image: nikolaik/python-nodejs:python3.12-nodejs22-slim
     replicas: 1
-    maxDatabaseConnections: 10
+    maxDatabaseConnections: 5
     runtimes: [shell, python, node, native]
     logLevel: debug
     # The default notifier endpoint is plaintext inside the cluster network.

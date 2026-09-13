@@ -97,7 +97,7 @@ spec:
             - name: ATTUNE__DATABASE__SCHEMA
               value: {{ $.Values.database.schema | quote }}
             - name: ATTUNE__DATABASE__MAX_CONNECTIONS
-              value: {{ .maxDatabaseConnections | default 10 | quote }}
+              value: {{ .maxDatabaseConnections | default 5 | quote }}
             - name: ATTUNE_WORKER_TYPE
               value: container
             - name: ATTUNE_WORKER_NAME
@@ -257,7 +257,7 @@ spec:
             - name: ATTUNE__DATABASE__SCHEMA
               value: {{ $.Values.database.schema | quote }}
             - name: ATTUNE__DATABASE__MAX_CONNECTIONS
-              value: {{ .maxDatabaseConnections | default 10 | quote }}
+              value: {{ .maxDatabaseConnections | default 5 | quote }}
             - name: ATTUNE__WORKER__WORKER_TYPE
               value: container
             - name: ATTUNE_API_URL

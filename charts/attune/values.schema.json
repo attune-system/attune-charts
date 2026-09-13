@@ -129,18 +129,20 @@
     "database": {
       "type": "object",
       "additionalProperties": true,
-      "required": ["schema", "database", "port", "postgresql"],
+      "required": ["schema", "database", "port", "connectionReserve", "postgresql"],
       "properties": {
         "schema": { "type": "string", "minLength": 1 },
         "database": { "type": "string", "minLength": 1 },
         "host": { "type": "string" },
         "port": { "$ref": "#/definitions/port" },
+        "connectionReserve": { "type": "integer", "minimum": 1 },
         "postgresql": {
           "type": "object",
           "additionalProperties": true,
-          "required": ["enabled", "admin", "provisioning", "image", "persistence"],
+          "required": ["enabled", "maxConnections", "admin", "provisioning", "image", "persistence"],
           "properties": {
             "enabled": { "type": "boolean" },
+            "maxConnections": { "type": "integer", "minimum": 1 },
             "admin": {
               "type": "object",
               "additionalProperties": true,
@@ -382,10 +384,12 @@
         "executionLogStreams": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["globalLimit", "perIdentityLimit"],
+          "required": ["globalLimit", "perIdentityLimit", "leaseSeconds", "heartbeatSeconds"],
           "properties": {
             "globalLimit": { "type": "integer", "minimum": 1 },
-            "perIdentityLimit": { "type": "integer", "minimum": 1 }
+            "perIdentityLimit": { "type": "integer", "minimum": 1 },
+            "leaseSeconds": { "type": "integer", "minimum": 2 },
+            "heartbeatSeconds": { "type": "integer", "minimum": 1 }
           }
         },
         "shutdownGracePeriodSeconds": { "type": "integer", "minimum": 1 },
@@ -648,6 +652,7 @@
       "properties": {
         "activeDeadlineSeconds": { "type": "integer", "minimum": 1 },
         "ttlSecondsAfterFinished": { "type": "integer", "minimum": 0 },
+        "maxDatabaseConnections": { "$ref": "#/definitions/databaseConnections" },
         "resources": { "$ref": "#/definitions/resources" }
       }
     },

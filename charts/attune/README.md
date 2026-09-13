@@ -52,8 +52,10 @@ URLs, so use `wss://attune.example.com` rather than appending `/ws`.
 The web nginx and nginx-ingress defaults disable proxy buffering and allow one
 hour of inactivity for API streams. Preserve the
 `nginx.ingress.kubernetes.io/proxy-*` annotations when adding custom ingress
-annotations. The API limits execution-log streams to 100 per Pod and 5 per
-identity by default. Configure these with `api.executionLogStreams`.
+annotations. PostgreSQL leases limit execution-log streams to 100 across all
+API Pods and 5 per signed identity by default. Each API Pod renews its leases
+every 10 seconds. PostgreSQL recovers leases from a crashed Pod after 45
+seconds. Configure these values with `api.executionLogStreams`.
 
 Install the release:
 
@@ -179,11 +181,23 @@ these tables.
 | External | `database.postgresql.enabled: false` and an external `database.host` | A provisioned database, role, schema, and extensions |
 
 Every long-running database client has an explicit pool budget under its
-service values. The defaults are `api.maxDatabaseConnections: 30`,
-`executor.maxDatabaseConnections: 20`, and 10 each for the supervisor,
-notifier, action-worker Pods, and sensor-worker Pods. These values apply per
-Pod. Multiply each budget by its replica count when sizing PostgreSQL, and add
-room for chart Jobs and operator access.
+service values. The API and executor default to 10 connections per Pod. The
+supervisor, notifier, action-worker Pods, sensor-worker Pods, and storage
+migration Jobs default to 5.
+
+Calculate the steady-state ceiling as
+`api replicas * api budget + executor replicas * executor budget + supervisor replicas * supervisor budget + notifier replicas * notifier budget + sum(action worker replicas * pool budget) + sum(sensor worker replicas * pool budget)`.
+The default deployment is therefore `10 + 10 + 5 + 5 + 5 + 5 = 40` pooled
+connections. Kubernetes' default 25% rolling surge rounds each one-replica
+Deployment up by one Pod, so simultaneous rollouts can temporarily double that
+ceiling to 80. `database.connectionReserve` keeps another 20 connections for
+migration hooks, provisioning, monitoring, and operator access. The bundled
+PostgreSQL instance sets `max_connections` from
+`database.postgresql.maxConnections`, which defaults to 100. The chart rejects
+a bundled database capacity below its calculated rolling ceiling plus reserve.
+It cannot validate an external database's actual `max_connections`; provision
+at least 100 connections for the unmodified defaults and recalculate after
+changing replicas, worker pools, rollout strategy, or pool budgets.
 
 | RabbitMQ mode | Chart settings | Prerequisite |
 | --- | --- | --- |

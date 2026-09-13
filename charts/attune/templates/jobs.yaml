@@ -316,6 +316,8 @@ spec:
               value: /opt/attune/config.yaml
             - name: ATTUNE__DATABASE__SCHEMA
               value: {{ .Values.database.schema | quote }}
+            - name: ATTUNE__DATABASE__MAX_CONNECTIONS
+              value: {{ .Values.jobs.storageMigration.maxDatabaseConnections | quote }}
           volumeMounts:
             - name: config
               mountPath: /opt/attune/config.yaml
@@ -378,6 +380,8 @@ spec:
               value: /opt/attune/config.yaml
             - name: ATTUNE__DATABASE__SCHEMA
               value: {{ .Values.database.schema | quote }}
+            - name: ATTUNE__DATABASE__MAX_CONNECTIONS
+              value: {{ .Values.jobs.storageMigration.maxDatabaseConnections | quote }}
           volumeMounts:
             - name: config
               mountPath: /opt/attune/config.yaml

@@ -114,6 +114,10 @@ spec:
               value: {{ .Values.api.executionLogStreams.globalLimit | quote }}
             - name: ATTUNE__SERVER__EXECUTION_LOG_STREAM_PER_IDENTITY_LIMIT
               value: {{ .Values.api.executionLogStreams.perIdentityLimit | quote }}
+            - name: ATTUNE__SERVER__EXECUTION_LOG_STREAM_LEASE_SECONDS
+              value: {{ .Values.api.executionLogStreams.leaseSeconds | quote }}
+            - name: ATTUNE__SERVER__EXECUTION_LOG_STREAM_HEARTBEAT_SECONDS
+              value: {{ .Values.api.executionLogStreams.heartbeatSeconds | quote }}
             - name: ATTUNE__SERVER__SHUTDOWN_GRACE_PERIOD
               value: {{ .Values.api.shutdownGracePeriodSeconds | quote }}
             - name: ATTUNE__WORKER__WORKER_TYPE
