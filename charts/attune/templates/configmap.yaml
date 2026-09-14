@@ -31,7 +31,7 @@
 {{- $rollingReplicas := add $replicas (div (add $replicas 3) 4) }}
 {{- $requiredDatabaseConnections = add $requiredDatabaseConnections (mul $rollingReplicas (int $service.maxDatabaseConnections)) }}
 {{- end }}
-{{- range $worker := concat .Values.actionWorkers .Values.sensorWorkers }}
+{{- range $worker := concat (default (list) .Values.actionWorkers) (default (list) .Values.sensorWorkers) }}
 {{- $replicas := int (default 1 $worker.replicas) }}
 {{- $rollingReplicas := add $replicas (div (add $replicas 3) 4) }}
 {{- $requiredDatabaseConnections = add $requiredDatabaseConnections (mul $rollingReplicas (int (default 5 $worker.maxDatabaseConnections))) }}

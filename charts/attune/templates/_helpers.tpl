@@ -181,12 +181,30 @@ securityContext:
 
 {{- define "attune.waitForCorePack" -}}
 - name: wait-for-core-pack
+  {{- if eq .Values.storage.mode "sharedVolume" }}
+  image: busybox:1.36
+  command: ["/bin/sh", "-ec"]
+  args:
+    - |
+      until [ -f /opt/attune/packs/.attune-bootstrap-r{{ .Release.Revision }} ]; do
+        echo "waiting for current pack bootstrap";
+        sleep 2;
+      done
+  volumeMounts:
+    - name: packs
+      mountPath: /opt/attune/packs
+      readOnly: true
+  {{- else }}
   image: {{ include "attune.image" (dict "root" . "image" .Values.images.initPacks) | quote }}
   imagePullPolicy: {{ .Values.images.initPacks.pullPolicy | quote }}
   command: ["python3", "/scripts/bootstrap_core_pack.py", "wait"]
+  envFrom:
+    - secretRef:
+        name: {{ include "attune.secretName" . | quote }}
   env:
     - name: ATTUNE_API_URL
       value: {{ printf "http://%s:%v" (include "attune.apiServiceName" .) .Values.api.service.port | quote }}
+  {{- end }}
 {{- end -}}
 
 {{- define "attune.waitForDatabaseCredentials" -}}

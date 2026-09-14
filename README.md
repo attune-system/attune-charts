@@ -5,7 +5,7 @@ publishes charts for the Attune platform and its public sites.
 
 | Chart | Version | Purpose |
 | --- | --- | --- |
-| `attune` | `0.7.2` | Attune services, workers, PostgreSQL, and RabbitMQ |
+| `attune` | `0.7.3` | Attune services, workers, PostgreSQL, and RabbitMQ |
 | `attune-site` | `0.1.5` | `attunedev.org` and its inquiry form |
 | `attune-docs-site` | `0.1.3` | `docs.attunedev.org` |
 
@@ -181,7 +181,7 @@ helm upgrade --install attune attune/attune \
   --timeout 20m
 ```
 
-The platform chart pulls Attune `0.6.1` images from
+The platform chart pulls Attune `0.6.2` images from
 `ghcr.io/attune-system/attune`. Apply the generated namespace, Secret, and
 optional CloudNativePG manifests before installation. The chart does not accept
 credentials through Helm values.

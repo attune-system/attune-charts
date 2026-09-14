@@ -469,7 +469,27 @@ shared_core_wait_count="$({
     < "$render_dir/attune-shared-volume.yaml"
 })"
 if [[ "$shared_core_wait_count" -ne 3 ]]; then
-  printf 'shared-volume consumers do not wait for API pack readiness\n' >&2
+  printf 'shared-volume consumers do not wait for pack readiness\n' >&2
+  exit 1
+fi
+
+shared_core_wait_marker_count="$({
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc '[select(.kind == "Deployment") | .spec.template.spec.initContainers[] | select(.name == "wait-for-core-pack" and (.args[0] | contains(".attune-bootstrap-r")))] | length' - \
+    < "$render_dir/attune-shared-volume.yaml"
+})"
+if [[ "$shared_core_wait_marker_count" -ne 3 ]]; then
+  printf 'shared-volume consumers do not wait for the current bootstrap marker\n' >&2
+  exit 1
+fi
+
+object_core_wait_secret_count="$({
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc '[select(.kind == "Deployment") | .spec.template.spec.initContainers[] | select(.name == "wait-for-core-pack" and .envFrom[0].secretRef.name == "verify-runtime")] | length' - \
+    < "$render_dir/attune-object-upgrade.yaml"
+})"
+if [[ "$object_core_wait_secret_count" -ne 3 ]]; then
+  printf 'object-mode API pack readiness checks do not receive runtime credentials\n' >&2
   exit 1
 fi
 
