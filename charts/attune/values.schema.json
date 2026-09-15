@@ -5,6 +5,7 @@
   "additionalProperties": true,
   "required": [
     "global",
+    "workloadSecurity",
     "security",
     "database",
     "rabbitmq",
@@ -42,6 +43,29 @@
         "imagePullSecrets": {
           "type": "array",
           "items": { "$ref": "#/definitions/localObjectReference" }
+        }
+      }
+    },
+    "workloadSecurity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "podSecurityContext", "containerSecurityContext", "identities"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "podSecurityContext": { "$ref": "#/definitions/restrictedPodSecurityContext" },
+        "containerSecurityContext": { "$ref": "#/definitions/restrictedContainerSecurityContext" },
+        "identities": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["attune", "helper", "postgres", "rabbitmq", "web", "worker"],
+          "properties": {
+            "attune": { "$ref": "#/definitions/runAsIdentity" },
+            "helper": { "$ref": "#/definitions/runAsIdentity" },
+            "postgres": { "$ref": "#/definitions/runAsIdentity" },
+            "rabbitmq": { "$ref": "#/definitions/runAsIdentity" },
+            "web": { "$ref": "#/definitions/runAsIdentity" },
+            "worker": { "$ref": "#/definitions/runAsIdentity" }
+          }
         }
       }
     },
@@ -564,6 +588,116 @@
         "sizeLimit": { "type": "string", "minLength": 1 }
       }
     },
+    "runAsIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runAsUser", "runAsGroup"],
+      "properties": {
+        "runAsUser": { "type": "integer", "minimum": 1, "maximum": 4294967295 },
+        "runAsGroup": { "type": "integer", "minimum": 1, "maximum": 4294967295 }
+      }
+    },
+    "securityCapabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["drop"],
+      "properties": {
+        "drop": {
+          "type": "array",
+          "uniqueItems": true,
+          "contains": { "const": "ALL" },
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "add": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "enum": ["NET_BIND_SERVICE"] }
+        }
+      }
+    },
+    "securityCapabilitiesOverride": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "drop": {
+          "type": "array",
+          "uniqueItems": true,
+          "contains": { "const": "ALL" },
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "add": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "enum": ["NET_BIND_SERVICE"] }
+        }
+      }
+    },
+    "podSecurityContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "runAsNonRoot": { "const": true },
+        "runAsUser": { "type": "integer", "minimum": 1, "maximum": 4294967295 },
+        "runAsGroup": { "type": "integer", "minimum": 1, "maximum": 4294967295 },
+        "fsGroup": { "type": "integer", "minimum": 1, "maximum": 4294967295 },
+        "fsGroupChangePolicy": { "type": "string", "enum": ["Always", "OnRootMismatch"] },
+        "supplementalGroups": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "integer", "minimum": 1, "maximum": 4294967295 }
+        },
+        "seccompProfile": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type"],
+          "properties": {
+            "type": { "type": "string", "enum": ["RuntimeDefault", "Localhost"] },
+            "localhostProfile": { "type": "string" }
+          }
+        }
+      }
+    },
+    "restrictedPodSecurityContext": {
+      "allOf": [
+        { "$ref": "#/definitions/podSecurityContext" },
+        { "type": "object", "required": ["runAsNonRoot", "seccompProfile"] }
+      ]
+    },
+    "containerSecurityContextOverride": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "runAsNonRoot": { "const": true },
+        "runAsUser": { "type": "integer", "minimum": 1, "maximum": 4294967295 },
+        "runAsGroup": { "type": "integer", "minimum": 1, "maximum": 4294967295 },
+        "allowPrivilegeEscalation": { "const": false },
+        "readOnlyRootFilesystem": { "type": "boolean" },
+        "privileged": { "const": false },
+        "procMount": { "const": "Default" },
+        "capabilities": { "$ref": "#/definitions/securityCapabilitiesOverride" },
+        "seccompProfile": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type"],
+          "properties": {
+            "type": { "type": "string", "enum": ["RuntimeDefault", "Localhost"] },
+            "localhostProfile": { "type": "string" }
+          }
+        }
+      }
+    },
+    "restrictedContainerSecurityContext": {
+      "allOf": [
+        { "$ref": "#/definitions/containerSecurityContextOverride" },
+        {
+          "type": "object",
+          "required": ["allowPrivilegeEscalation", "capabilities"],
+          "properties": {
+            "capabilities": { "$ref": "#/definitions/securityCapabilities" }
+          }
+        }
+      ]
+    },
     "localStoragePodSecurityContext": {
       "type": "object",
       "additionalProperties": false,
@@ -803,6 +937,8 @@
         "replicas": { "type": "integer", "minimum": 1 },
         "runtimes": { "$ref": "#/definitions/runtimeList" },
         "resources": { "$ref": "#/definitions/resources" },
+        "podSecurityContext": { "$ref": "#/definitions/podSecurityContext" },
+        "containerSecurityContext": { "$ref": "#/definitions/containerSecurityContextOverride" },
         "env": {
           "type": "array",
           "items": { "$ref": "#/definitions/envVar" }

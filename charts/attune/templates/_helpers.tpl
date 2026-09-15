@@ -174,15 +174,57 @@ emptyDir:
 {{- end }}
 {{- end -}}
 
-{{- define "attune.localStoragePodSecurityContext" -}}
+{{- define "attune.podSecurityContext" -}}
+{{- $root := .root -}}
+{{- if $root.Values.workloadSecurity.enabled -}}
+{{- $context := deepCopy $root.Values.workloadSecurity.podSecurityContext -}}
+{{- if .useLocalStorage -}}
+{{- $context = mergeOverwrite $context (deepCopy $root.Values.storage.local.podSecurityContext) -}}
+{{- end -}}
+{{- with .override -}}
+{{- $context = mergeOverwrite $context (deepCopy .) -}}
+{{- end -}}
 securityContext:
-  {{- toYaml .Values.storage.local.podSecurityContext | nindent 2 }}
+  {{- toYaml $context | nindent 2 }}
+{{- end -}}
+{{- end -}}
+
+{{- define "attune.containerSecurityContext" -}}
+{{- $root := .root -}}
+{{- if $root.Values.workloadSecurity.enabled -}}
+{{- $context := deepCopy $root.Values.workloadSecurity.containerSecurityContext -}}
+{{- $identityName := default "attune" .identity -}}
+{{- $identity := index $root.Values.workloadSecurity.identities $identityName -}}
+{{- $context = mergeOverwrite $context (deepCopy $identity) -}}
+{{- with .override -}}
+{{- $context = mergeOverwrite $context (deepCopy .) -}}
+{{- end -}}
+securityContext:
+  {{- toYaml $context | nindent 2 }}
+{{- end -}}
+{{- end -}}
+
+{{- define "attune.localStoragePodSecurityContext" -}}
+{{- include "attune.podSecurityContext" (dict "root" . "useLocalStorage" true) -}}
+{{- end -}}
+
+{{- define "attune.workerPodSecurityContext" -}}
+{{- $root := .root -}}
+{{- $override := deepCopy (.worker.podSecurityContext | default dict) -}}
+{{- if and (ne $root.Values.storage.mode "object") (not (hasKey $override "fsGroup")) -}}
+{{- $_ := set $override "fsGroup" $root.Values.workloadSecurity.identities.worker.runAsGroup -}}
+{{- end -}}
+{{- if and (ne $root.Values.storage.mode "object") (not (hasKey $override "fsGroupChangePolicy")) -}}
+{{- $_ := set $override "fsGroupChangePolicy" "OnRootMismatch" -}}
+{{- end -}}
+{{- include "attune.podSecurityContext" (dict "root" $root "useLocalStorage" (eq $root.Values.storage.mode "object") "override" $override) -}}
 {{- end -}}
 
 {{- define "attune.waitForCorePack" -}}
 - name: wait-for-core-pack
   {{- if eq .Values.storage.mode "sharedVolume" }}
   image: busybox:1.36
+  {{- include "attune.containerSecurityContext" (dict "root" . "identity" "helper") | nindent 2 }}
   command: ["/bin/sh", "-ec"]
   args:
     - |
@@ -197,6 +239,7 @@ securityContext:
   {{- else }}
   image: {{ include "attune.image" (dict "root" . "image" .Values.images.initPacks) | quote }}
   imagePullPolicy: {{ .Values.images.initPacks.pullPolicy | quote }}
+  {{- include "attune.containerSecurityContext" (dict "root" . "identity" "helper") | nindent 2 }}
   command: ["python3", "/scripts/bootstrap_core_pack.py", "wait"]
   envFrom:
     - secretRef:
@@ -210,6 +253,7 @@ securityContext:
 {{- define "attune.waitForDatabaseCredentials" -}}
 - name: wait-for-database-credentials
   image: postgres:16-alpine
+  {{- include "attune.containerSecurityContext" (dict "root" . "identity" "postgres") | nindent 2 }}
   command: ["/bin/sh", "-ec"]
   args:
     - |
@@ -226,6 +270,7 @@ securityContext:
 - name: wait-for-rabbitmq-credentials
   image: {{ printf "%s:%s" .Values.rabbitmq.provisioning.image.repository .Values.rabbitmq.provisioning.image.tag | quote }}
   imagePullPolicy: {{ .Values.rabbitmq.provisioning.image.pullPolicy | quote }}
+  {{- include "attune.containerSecurityContext" (dict "root" . "identity" "helper") | nindent 2 }}
   command: ["python3", "-c"]
   args:
     - |
@@ -330,6 +375,7 @@ securityContext:
 {{- define "attune.waitForRabbitmqPort" -}}
 - name: wait-for-rabbitmq
   image: busybox:1.36
+  {{- include "attune.containerSecurityContext" (dict "root" . "identity" "helper") | nindent 2 }}
   command: ["/bin/sh", "-ec"]
   args:
     - |

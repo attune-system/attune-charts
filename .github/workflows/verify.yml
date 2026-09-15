@@ -11,9 +11,16 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        helm-version:
+          - v3.16.1
+          - v4.2.3
+    name: Verify with Helm ${{ matrix.helm-version }}
     steps:
       - uses: actions/checkout@v4
       - uses: azure/setup-helm@v4
         with:
-          version: v4.2.3
+          version: ${{ matrix.helm-version }}
       - run: ./scripts/verify.sh

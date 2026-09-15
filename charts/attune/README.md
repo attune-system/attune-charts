@@ -119,6 +119,45 @@ Attune `0.6.0` creates the bootstrap identity with the development password
 `TestPass123!`. Change that password after the first login. The current
 `init-user` image does not honor a custom `bootstrap.testUser.password` value.
 
+## Run in restricted namespaces
+
+Secure workload contexts are enabled by default under `workloadSecurity`. Every
+rendered Pod uses `runAsNonRoot: true` and `RuntimeDefault` seccomp. Every
+container and init container disables privilege escalation and drops all Linux
+capabilities. The chart supplies image-specific non-root identities for Attune,
+helper, PostgreSQL, RabbitMQ, web, and default worker images. The web container
+adds back only `NET_BIND_SERVICE` and uses ephemeral writable directories for
+nginx state and its generated runtime configuration.
+
+These defaults satisfy Kubernetes Pod Security Admission's `restricted`
+profile. Keep them enabled for shared, compliant clusters:
+
+```yaml
+workloadSecurity:
+  enabled: true
+```
+
+Custom worker runtime images may use another non-root UID/GID. Override only
+that pool while retaining the shared restricted fields:
+
+```yaml
+actionWorkers:
+  - name: custom
+    image: company/custom-runtime:1.0.0
+    runtimes: [python, shell]
+    podSecurityContext:
+      fsGroup: 2000
+    containerSecurityContext:
+      runAsUser: 2000
+      runAsGroup: 2000
+```
+
+The configured user must exist in, or be supported numerically by, the runtime
+image, and must be able to write its local pack, runtime-environment, and
+artifact staging volumes. Disable `workloadSecurity.enabled` only when the
+cluster cannot accept these contexts and another admission/security mechanism
+provides equivalent controls.
+
 ## Configure OIDC and Active Directory
 
 Rancher exposes both identity providers in the generated chart form under

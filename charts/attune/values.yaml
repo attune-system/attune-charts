@@ -7,6 +7,40 @@ global:
   imageTag: "0.6.2"
   imagePullSecrets: []
 
+# Secure workload defaults satisfy Kubernetes Pod Security Admission's
+# restricted profile. Disable only on clusters that cannot support these
+# contexts. Worker pools can override their runtime container identity.
+workloadSecurity:
+  enabled: true
+  podSecurityContext:
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+  identities:
+    attune:
+      runAsUser: 1000
+      runAsGroup: 1000
+    helper:
+      runAsUser: 1000
+      runAsGroup: 1000
+    postgres:
+      runAsUser: 70
+      runAsGroup: 70
+    rabbitmq:
+      runAsUser: 100
+      runAsGroup: 101
+    web:
+      runAsUser: 101
+      runAsGroup: 101
+    worker:
+      runAsUser: 1000
+      runAsGroup: 1000
+
 security:
   # Required. The Secret must contain the runtime keys listed in the chart README.
   existingSecret: ""
@@ -334,6 +368,8 @@ web:
 #   runtimes         (optional) - List of runtimes to expose; [] = auto-detect
 #   resources        (optional) - Kubernetes resource requests/limits
 #   env              (optional) - Kubernetes env entries; use secretKeyRef for secrets
+#   podSecurityContext       (optional) - Overrides shared Pod security fields
+#   containerSecurityContext (optional) - Overrides shared worker container fields
 #   imagePullPolicy  (optional) - Pull policy for the worker image
 #   logLevel         (optional) - RUST_LOG level (default: "info")
 #   runtimeClassName (optional) - Kubernetes RuntimeClass (e.g., "nvidia" for GPU)
@@ -349,6 +385,8 @@ actionWorkers:
     replicas: 1
     maxDatabaseConnections: 5
     runtimes: [shell, python, node, native]
+    podSecurityContext: {}
+    containerSecurityContext: {}
     resources: {}
 
 # Default sensor workers include at least one Python+Node.js runtime image.
@@ -361,6 +399,8 @@ sensorWorkers:
     logLevel: debug
     # The default notifier endpoint is plaintext inside the cluster network.
     allowInsecureNotifierWs: true
+    podSecurityContext: {}
+    containerSecurityContext: {}
     resources: {}
 
 # Example values for heterogeneous runtime pools:

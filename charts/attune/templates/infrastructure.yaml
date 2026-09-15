@@ -30,10 +30,12 @@ spec:
       labels:
         {{- include "attune.componentLabels" (dict "root" . "component" "postgresql") | nindent 8 }}
     spec:
+      {{- include "attune.podSecurityContext" (dict "root" . "override" (dict "fsGroup" .Values.workloadSecurity.identities.postgres.runAsGroup "fsGroupChangePolicy" "OnRootMismatch")) | nindent 6 }}
       containers:
         - name: postgresql
           image: {{ printf "%s:%s" .Values.database.postgresql.image.repository .Values.database.postgresql.image.tag | quote }}
           imagePullPolicy: IfNotPresent
+          {{- include "attune.containerSecurityContext" (dict "root" . "identity" "postgres") | nindent 10 }}
           args: ["-c", {{ printf "max_connections=%d" (int .Values.database.postgresql.maxConnections) | quote }}]
           env:
             - name: POSTGRES_USER
@@ -117,10 +119,12 @@ spec:
       labels:
         {{- include "attune.componentLabels" (dict "root" . "component" "rabbitmq") | nindent 8 }}
     spec:
+      {{- include "attune.podSecurityContext" (dict "root" . "override" (dict "fsGroup" .Values.workloadSecurity.identities.rabbitmq.runAsGroup "fsGroupChangePolicy" "OnRootMismatch")) | nindent 6 }}
       containers:
         - name: rabbitmq
           image: {{ printf "%s:%s" .Values.rabbitmq.image.repository .Values.rabbitmq.image.tag | quote }}
           imagePullPolicy: IfNotPresent
+          {{- include "attune.containerSecurityContext" (dict "root" . "identity" "rabbitmq") | nindent 10 }}
           env:
             - name: RABBITMQ_DEFAULT_USER
               valueFrom:
