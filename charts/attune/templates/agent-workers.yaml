@@ -24,9 +24,7 @@ spec:
       annotations:
         attune.dev/release-revision: {{ $.Release.Revision | quote }}
     spec:
-      {{- if eq $.Values.storage.mode "object" }}
-      {{- include "attune.localStoragePodSecurityContext" $ | nindent 6 }}
-      {{- end }}
+      {{- include "attune.workerPodSecurityContext" (dict "root" $ "worker" .) | nindent 6 }}
       {{- if $.Values.global.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml $.Values.global.imagePullSecrets | nindent 8 }}
@@ -51,6 +49,7 @@ spec:
         - name: init-agent
           image: {{ include "attune.image" (dict "root" $ "image" $.Values.images.agent) | quote }}
           imagePullPolicy: {{ $.Values.images.agent.pullPolicy | quote }}
+          {{- include "attune.containerSecurityContext" (dict "root" $ "identity" "helper") | nindent 10 }}
           command: ["/bin/sh", "-ec"]
           args:
             - |
@@ -67,6 +66,7 @@ spec:
               mountPath: /opt/attune/agent
         - name: wait-for-schema
           image: postgres:16-alpine
+          {{- include "attune.containerSecurityContext" (dict "root" $ "identity" "postgres") | nindent 10 }}
           command: ["/bin/sh", "-ec"]
           args:
             - |
@@ -87,6 +87,7 @@ spec:
         - name: worker
           image: {{ .image | quote }}
           imagePullPolicy: {{ .imagePullPolicy | default "IfNotPresent" | quote }}
+          {{- include "attune.containerSecurityContext" (dict "root" $ "identity" "worker" "override" (.containerSecurityContext | default dict)) | nindent 10 }}
           command: ["/opt/attune/agent/attune-agent"]
           envFrom:
             - secretRef:
@@ -188,9 +189,7 @@ spec:
       annotations:
         attune.dev/release-revision: {{ $.Release.Revision | quote }}
     spec:
-      {{- if eq $.Values.storage.mode "object" }}
-      {{- include "attune.localStoragePodSecurityContext" $ | nindent 6 }}
-      {{- end }}
+      {{- include "attune.workerPodSecurityContext" (dict "root" $ "worker" .) | nindent 6 }}
       {{- if $.Values.global.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml $.Values.global.imagePullSecrets | nindent 8 }}
@@ -211,6 +210,7 @@ spec:
         - name: init-agent
           image: {{ include "attune.image" (dict "root" $ "image" $.Values.images.agent) | quote }}
           imagePullPolicy: {{ $.Values.images.agent.pullPolicy | quote }}
+          {{- include "attune.containerSecurityContext" (dict "root" $ "identity" "helper") | nindent 10 }}
           command: ["/bin/sh", "-ec"]
           args:
             - |
@@ -227,6 +227,7 @@ spec:
               mountPath: /opt/attune/agent
         - name: wait-for-schema
           image: postgres:16-alpine
+          {{- include "attune.containerSecurityContext" (dict "root" $ "identity" "postgres") | nindent 10 }}
           command: ["/bin/sh", "-ec"]
           args:
             - |
@@ -247,6 +248,7 @@ spec:
         - name: sensor
           image: {{ .image | quote }}
           imagePullPolicy: {{ .imagePullPolicy | default "IfNotPresent" | quote }}
+          {{- include "attune.containerSecurityContext" (dict "root" $ "identity" "worker" "override" (.containerSecurityContext | default dict)) | nindent 10 }}
           command: ["/opt/attune/agent/attune-sensor-agent"]
           envFrom:
             - secretRef:

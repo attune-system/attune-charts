@@ -221,6 +221,19 @@ helm template verify "$root_dir/charts/attune" \
   --values "$root_dir/charts/attune/ci/object-ephemeral-values.yaml" \
   > "$render_dir/attune-object-ephemeral.yaml"
 
+helm template verify "$root_dir/charts/attune" \
+  --namespace verify \
+  --values "$root_dir/charts/attune/ci/object-values.yaml" \
+  --set database.postgresql.admin.existingSecret=verify-postgresql-admin \
+  --set database.postgresql.admin.usernameKey=username \
+  --set database.postgresql.admin.passwordKey=password \
+  --set database.postgresql.provisioning.enabled=true \
+  --set rabbitmq.admin.existingSecret=verify-rabbitmq-admin \
+  --set rabbitmq.admin.usernameKey=username \
+  --set rabbitmq.admin.passwordKey=password \
+  --set rabbitmq.provisioning.enabled=true \
+  > "$render_dir/attune-restricted.yaml"
+
 docker run --rm -i ghcr.io/yannh/kubeconform:v0.7.0 \
   -strict -summary < "$render_dir/attune-shared-volume.yaml"
 docker run --rm -i ghcr.io/yannh/kubeconform:v0.7.0 \
@@ -229,6 +242,122 @@ docker run --rm -i ghcr.io/yannh/kubeconform:v0.7.0 \
   -strict -summary < "$render_dir/attune-object-upgrade.yaml"
 docker run --rm -i ghcr.io/yannh/kubeconform:v0.7.0 \
   -strict -summary < "$render_dir/attune-object-ephemeral.yaml"
+docker run --rm -i ghcr.io/yannh/kubeconform:v0.7.0 \
+  -strict -summary < "$render_dir/attune-restricted.yaml"
+
+restricted_pod_count="$({
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc '[select(.kind == "Deployment" or .kind == "StatefulSet" or .kind == "Job") | .spec.template.spec] | length' - \
+    < "$render_dir/attune-restricted.yaml"
+})"
+restricted_compliant_pod_count="$({
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc '[select(.kind == "Deployment" or .kind == "StatefulSet" or .kind == "Job") | select(.spec.template.spec.securityContext.runAsNonRoot == true and .spec.template.spec.securityContext.seccompProfile.type == "RuntimeDefault")] | length' - \
+    < "$render_dir/attune-restricted.yaml"
+})"
+restricted_container_count="$({
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc '[select(.kind == "Deployment" or .kind == "StatefulSet" or .kind == "Job") | (.spec.template.spec.initContainers[]?, .spec.template.spec.containers[]?)] | length' - \
+    < "$render_dir/attune-restricted.yaml"
+})"
+restricted_compliant_container_count="$({
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc '[select(.kind == "Deployment" or .kind == "StatefulSet" or .kind == "Job") | (.spec.template.spec.initContainers[]?, .spec.template.spec.containers[]?) | select(.securityContext.runAsUser > 0 and .securityContext.privileged != true and .securityContext.allowPrivilegeEscalation == false and (.securityContext.capabilities.drop | contains(["ALL"])))] | length' - \
+    < "$render_dir/attune-restricted.yaml"
+})"
+if [[ "$restricted_pod_count" -eq 0 || "$restricted_pod_count" -ne "$restricted_compliant_pod_count" ]]; then
+  printf 'restricted security context reached %s of %s rendered Pods\n' \
+    "$restricted_compliant_pod_count" "$restricted_pod_count" >&2
+  exit 1
+fi
+if [[ "$restricted_container_count" -eq 0 || "$restricted_container_count" -ne "$restricted_compliant_container_count" ]]; then
+  printf 'restricted security context reached %s of %s rendered containers\n' \
+    "$restricted_compliant_container_count" "$restricted_container_count" >&2
+  exit 1
+fi
+restricted_unsafe_added_capability_count="$({
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc '[select(.kind == "Deployment" or .kind == "StatefulSet" or .kind == "Job") | (.spec.template.spec.initContainers[]?, .spec.template.spec.containers[]?) | .securityContext.capabilities.add[]? | select(. != "NET_BIND_SERVICE")] | length' - \
+    < "$render_dir/attune-restricted.yaml"
+})"
+if [[ "$restricted_unsafe_added_capability_count" -ne 0 ]]; then
+  printf 'restricted security contexts rendered disallowed added capabilities\n' >&2
+  exit 1
+fi
+
+web_restricted_contract="$({
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc 'select(.kind == "Deployment" and .spec.template.metadata.labels."app.kubernetes.io/component" == "web") | [.spec.template.spec.containers[0].securityContext.runAsUser, .spec.template.spec.containers[0].securityContext.runAsGroup, (.spec.template.spec.containers[0].securityContext.capabilities.add | join(",")), ([.spec.template.spec.volumes[] | select(.name == "nginx-cache" or .name == "nginx-run" or .name == "runtime-config")] | length)] | @tsv' - \
+    < "$render_dir/attune-restricted.yaml"
+})"
+if [[ "$web_restricted_contract" != $'101\t101\tNET_BIND_SERVICE\t3' ]]; then
+  printf 'web restricted runtime contract is incomplete: %s\n' "$web_restricted_contract" >&2
+  exit 1
+fi
+
+worker_security_override="$({
+  helm template verify "$root_dir/charts/attune" \
+    --namespace verify \
+    --values "$root_dir/charts/attune/ci/object-values.yaml" \
+    --set-json 'actionWorkers=[{"name":"custom","image":"python:3.12","podSecurityContext":{"fsGroup":2000},"containerSecurityContext":{"runAsUser":2000,"runAsGroup":2000}}]' | \
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc '[select(.kind == "Deployment" and .spec.template.metadata.labels."app.kubernetes.io/component" == "action-worker-custom")] | .[0] | [.spec.template.spec.securityContext.fsGroup, (.spec.template.spec.containers[] | select(.name == "worker") | .securityContext.runAsUser), (.spec.template.spec.containers[] | select(.name == "worker") | .securityContext.runAsGroup)] | @tsv' -
+})"
+if [[ "$worker_security_override" != $'2000\t2000\t2000' ]]; then
+  printf 'worker security context override did not reach the rendered Pod: %s\n' \
+    "$worker_security_override" >&2
+  exit 1
+fi
+
+worker_fs_group_policy_override="$({
+  helm template verify "$root_dir/charts/attune" \
+    --namespace verify \
+    --values "$root_dir/charts/attune/ci/shared-volume-values.yaml" \
+    --set-json 'actionWorkers=[{"name":"custom","image":"python:3.12","podSecurityContext":{"fsGroupChangePolicy":"Always"}}]' | \
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc '[select(.kind == "Deployment" and .spec.template.metadata.labels."app.kubernetes.io/component" == "action-worker-custom")] | .[0] | [.spec.template.spec.securityContext.fsGroup, .spec.template.spec.securityContext.fsGroupChangePolicy] | @tsv' -
+})"
+if [[ "$worker_fs_group_policy_override" != $'1000\tAlways' ]]; then
+  printf 'worker fsGroup fallback overwrote the explicit change policy: %s\n' \
+    "$worker_fs_group_policy_override" >&2
+  exit 1
+fi
+
+if helm template verify "$root_dir/charts/attune" \
+  --set security.existingSecret=verify-runtime \
+  --set workloadSecurity.podSecurityContext.runAsNonRoot=false \
+  > /dev/null 2>&1; then
+  printf 'restricted workload security accepted runAsNonRoot=false\n' >&2
+  exit 1
+fi
+if helm template verify "$root_dir/charts/attune" \
+  --set security.existingSecret=verify-runtime \
+  --set workloadSecurity.containerSecurityContext.allowPrivilegeEscalation=true \
+  > /dev/null 2>&1; then
+  printf 'restricted workload security accepted privilege escalation\n' >&2
+  exit 1
+fi
+if helm template verify "$root_dir/charts/attune" \
+  --set security.existingSecret=verify-runtime \
+  --set-json 'actionWorkers=[{"name":"unsafe","image":"python:3.12","containerSecurityContext":{"runAsUser":0}}]' \
+  > /dev/null 2>&1; then
+  printf 'restricted worker override accepted root UID\n' >&2
+  exit 1
+fi
+if helm template verify "$root_dir/charts/attune" \
+  --set security.existingSecret=verify-runtime \
+  --set-json 'actionWorkers=[{"name":"unsafe","image":"python:3.12","containerSecurityContext":{"capabilities":{"add":["SYS_ADMIN"]}}}]' \
+  > /dev/null 2>&1; then
+  printf 'restricted worker override accepted SYS_ADMIN\n' >&2
+  exit 1
+fi
+if helm template verify "$root_dir/charts/attune" \
+  --set security.existingSecret=verify-runtime \
+  --set-json 'actionWorkers=[{"name":"unsafe","image":"python:3.12","podSecurityContext":{"seccompProfile":{"type":"Unconfined"}}}]' \
+  > /dev/null 2>&1; then
+  printf 'restricted worker override accepted unconfined seccomp\n' >&2
+  exit 1
+fi
 
 default_worker_empty_dir_count="$({
   docker run --rm -i mikefarah/yq:4.47.2 \
@@ -361,11 +490,11 @@ fi
 
 shared_local_security_count="$({
   docker run --rm -i mikefarah/yq:4.47.2 \
-    eval-all --no-doc '[select(.kind == "Deployment" or .kind == "Job") | select(.spec.template.spec.securityContext.fsGroup != null)] | length' - \
+    eval-all --no-doc '[select(.kind == "Deployment" or .kind == "Job") | select(.spec.template.metadata.labels."app.kubernetes.io/component" == "api" or .spec.template.metadata.labels."app.kubernetes.io/component" == "executor" or .spec.template.metadata.labels."app.kubernetes.io/component" == "supervisor" or .spec.template.metadata.labels."app.kubernetes.io/component" == "init-packs") | select(.spec.template.spec.securityContext.fsGroup != null)] | length' - \
     < "$render_dir/attune-shared-volume.yaml"
 })"
 if [[ "$shared_local_security_count" -ne 0 ]]; then
-  printf 'local-volume group ownership escaped object mode\n' >&2
+  printf 'object-local volume group ownership escaped to shared-volume consumers\n' >&2
   exit 1
 fi
 

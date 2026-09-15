@@ -52,8 +52,8 @@ spec:
         attune.dev/release-revision: {{ .Release.Revision | quote }}
     spec:
       terminationGracePeriodSeconds: {{ .Values.api.terminationGracePeriodSeconds }}
+      {{- include "attune.podSecurityContext" (dict "root" . "useLocalStorage" (eq .Values.storage.mode "object")) | nindent 6 }}
       {{- if eq .Values.storage.mode "object" }}
-      {{- include "attune.localStoragePodSecurityContext" . | nindent 6 }}
       serviceAccountName: {{ include "attune.apiServiceAccountName" . | quote }}
       {{- end }}
       {{- if .Values.global.imagePullSecrets }}
@@ -63,6 +63,7 @@ spec:
       initContainers:
         - name: wait-for-schema
           image: postgres:16-alpine
+          {{- include "attune.containerSecurityContext" (dict "root" . "identity" "postgres") | nindent 10 }}
           command: ["/bin/sh", "-ec"]
           args:
             - |
@@ -76,6 +77,7 @@ spec:
         {{- if eq .Values.storage.mode "sharedVolume" }}
         - name: wait-for-packs
           image: busybox:1.36
+          {{- include "attune.containerSecurityContext" (dict "root" . "identity" "helper") | nindent 10 }}
           command: ["/bin/sh", "-ec"]
           args:
             - |
@@ -96,6 +98,7 @@ spec:
         - name: api
           image: {{ include "attune.image" (dict "root" . "image" .Values.images.api) | quote }}
           imagePullPolicy: {{ .Values.images.api.pullPolicy | quote }}
+          {{- include "attune.containerSecurityContext" (dict "root" . "identity" "attune") | nindent 10 }}
           envFrom:
             - secretRef:
                 name: {{ include "attune.secretName" . | quote }}
@@ -195,9 +198,7 @@ spec:
       annotations:
         attune.dev/release-revision: {{ .Release.Revision | quote }}
     spec:
-      {{- if eq .Values.storage.mode "object" }}
-      {{- include "attune.localStoragePodSecurityContext" . | nindent 6 }}
-      {{- end }}
+      {{- include "attune.podSecurityContext" (dict "root" . "useLocalStorage" (eq .Values.storage.mode "object")) | nindent 6 }}
       {{- if .Values.global.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml .Values.global.imagePullSecrets | nindent 8 }}
@@ -205,6 +206,7 @@ spec:
       initContainers:
         - name: wait-for-schema
           image: postgres:16-alpine
+          {{- include "attune.containerSecurityContext" (dict "root" . "identity" "postgres") | nindent 10 }}
           command: ["/bin/sh", "-ec"]
           args:
             - |
@@ -223,6 +225,7 @@ spec:
         - name: executor
           image: {{ include "attune.image" (dict "root" . "image" .Values.images.executor) | quote }}
           imagePullPolicy: {{ .Values.images.executor.pullPolicy | quote }}
+          {{- include "attune.containerSecurityContext" (dict "root" . "identity" "attune") | nindent 10 }}
           envFrom:
             - secretRef:
                 name: {{ include "attune.secretName" . | quote }}
@@ -285,8 +288,8 @@ spec:
       annotations:
         attune.dev/release-revision: {{ .Release.Revision | quote }}
     spec:
+      {{- include "attune.podSecurityContext" (dict "root" . "useLocalStorage" (eq .Values.storage.mode "object")) | nindent 6 }}
       {{- if eq .Values.storage.mode "object" }}
-      {{- include "attune.localStoragePodSecurityContext" . | nindent 6 }}
       serviceAccountName: {{ include "attune.supervisorServiceAccountName" . | quote }}
       {{- end }}
       {{- if .Values.global.imagePullSecrets }}
@@ -296,6 +299,7 @@ spec:
       initContainers:
         - name: wait-for-schema
           image: postgres:16-alpine
+          {{- include "attune.containerSecurityContext" (dict "root" . "identity" "postgres") | nindent 10 }}
           command: ["/bin/sh", "-ec"]
           args:
             - |
@@ -310,6 +314,7 @@ spec:
         - name: supervisor
           image: {{ include "attune.image" (dict "root" . "image" .Values.images.supervisor) | quote }}
           imagePullPolicy: {{ .Values.images.supervisor.pullPolicy | quote }}
+          {{- include "attune.containerSecurityContext" (dict "root" . "identity" "attune") | nindent 10 }}
           envFrom:
             - secretRef:
                 name: {{ include "attune.secretName" . | quote }}
@@ -374,6 +379,7 @@ spec:
       annotations:
         attune.dev/release-revision: {{ .Release.Revision | quote }}
     spec:
+      {{- include "attune.podSecurityContext" (dict "root" .) | nindent 6 }}
       {{- if .Values.global.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml .Values.global.imagePullSecrets | nindent 8 }}
@@ -381,6 +387,7 @@ spec:
       initContainers:
         - name: wait-for-schema
           image: postgres:16-alpine
+          {{- include "attune.containerSecurityContext" (dict "root" . "identity" "postgres") | nindent 10 }}
           command: ["/bin/sh", "-ec"]
           args:
             - |
@@ -395,6 +402,7 @@ spec:
         - name: notifier
           image: {{ include "attune.image" (dict "root" . "image" .Values.images.notifier) | quote }}
           imagePullPolicy: {{ .Values.images.notifier.pullPolicy | quote }}
+          {{- include "attune.containerSecurityContext" (dict "root" . "identity" "attune") | nindent 10 }}
           envFrom:
             - secretRef:
                 name: {{ include "attune.secretName" . | quote }}
@@ -466,6 +474,7 @@ spec:
       annotations:
         attune.dev/release-revision: {{ .Release.Revision | quote }}
     spec:
+      {{- include "attune.podSecurityContext" (dict "root" . "override" (dict "fsGroup" .Values.workloadSecurity.identities.web.runAsGroup "fsGroupChangePolicy" "OnRootMismatch")) | nindent 6 }}
       {{- if .Values.global.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml .Values.global.imagePullSecrets | nindent 8 }}
@@ -474,6 +483,7 @@ spec:
         - name: web
           image: {{ include "attune.image" (dict "root" . "image" .Values.images.web) | quote }}
           imagePullPolicy: {{ .Values.images.web.pullPolicy | quote }}
+          {{- include "attune.containerSecurityContext" (dict "root" . "identity" "web" "override" (dict "capabilities" (dict "add" (list "NET_BIND_SERVICE")))) | nindent 10 }}
           env:
             - name: API_URL
               value: {{ .Values.web.config.apiUrl | quote }}
@@ -502,10 +512,26 @@ spec:
             - name: nginx-config
               mountPath: /etc/nginx/conf.d/attune.conf
               subPath: nginx.conf
+            {{- if .Values.workloadSecurity.enabled }}
+            - name: nginx-cache
+              mountPath: /var/cache/nginx
+            - name: nginx-run
+              mountPath: /var/run
+            - name: runtime-config
+              mountPath: /usr/share/nginx/html/config
+            {{- end }}
       volumes:
         - name: nginx-config
           configMap:
             name: {{ printf "%s-config" (include "attune.fullname" .) | quote }}
+        {{- if .Values.workloadSecurity.enabled }}
+        - name: nginx-cache
+          emptyDir: {}
+        - name: nginx-run
+          emptyDir: {}
+        - name: runtime-config
+          emptyDir: {}
+        {{- end }}
 {{- if .Values.mcp.enabled }}
 ---
 apiVersion: v1
@@ -541,6 +567,7 @@ spec:
       annotations:
         attune.dev/release-revision: {{ .Release.Revision | quote }}
     spec:
+      {{- include "attune.podSecurityContext" (dict "root" .) | nindent 6 }}
       {{- if .Values.global.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml .Values.global.imagePullSecrets | nindent 8 }}
@@ -548,6 +575,7 @@ spec:
       initContainers:
         - name: wait-for-api
           image: busybox:1.36
+          {{- include "attune.containerSecurityContext" (dict "root" . "identity" "helper") | nindent 10 }}
           command: ["/bin/sh", "-ec"]
           args:
             - |
@@ -559,6 +587,7 @@ spec:
         - name: mcp
           image: {{ include "attune.image" (dict "root" . "image" .Values.images.mcp) | quote }}
           imagePullPolicy: {{ .Values.images.mcp.pullPolicy | quote }}
+          {{- include "attune.containerSecurityContext" (dict "root" . "identity" "attune") | nindent 10 }}
           command: ["/usr/local/bin/attune-mcp"]
           env:
             - name: ATTUNE_API_URL
