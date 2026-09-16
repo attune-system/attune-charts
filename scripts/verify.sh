@@ -677,9 +677,8 @@ if ! grep -q 'migrateFromSharedVolume: false' "$root_dir/charts/attune/values.ya
   exit 1
 fi
 for storage_cutover_contract in \
-  'command: \["attune-api"\]' \
+  'command: \["/usr/local/bin/attune-service"\]' \
   'args: \["--upgrade-pack-releases"\]' \
-  'command: \["attune-supervisor"\]' \
   'args: \["migrate-storage"\]' \
   'helm.sh/hook-weight: "-8"' \
   'helm.sh/hook-weight: "-7"' \
@@ -690,6 +689,12 @@ for storage_cutover_contract in \
     exit 1
   fi
 done
+
+storage_cutover_command_count="$(grep -c 'command: \["/usr/local/bin/attune-service"\]' "$root_dir/charts/attune/templates/jobs.yaml")"
+if [[ "$storage_cutover_command_count" -ne 2 ]]; then
+  printf 'storage cutover expected two runtime service commands, found %s\n' "$storage_cutover_command_count" >&2
+  exit 1
+fi
 
 object_core_wait_count="$(grep -c 'name: wait-for-core-pack' "$render_dir/attune-object.yaml")"
 if [[ "$object_core_wait_count" -ne 3 ]]; then

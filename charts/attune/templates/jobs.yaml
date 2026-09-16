@@ -311,7 +311,7 @@ spec:
           image: {{ include "attune.image" (dict "root" . "image" .Values.images.api) | quote }}
           imagePullPolicy: {{ .Values.images.api.pullPolicy | quote }}
           {{- include "attune.containerSecurityContext" (dict "root" . "identity" "attune") | nindent 10 }}
-          command: ["attune-api"]
+          command: ["/usr/local/bin/attune-service"]
           args: ["--upgrade-pack-releases"]
           envFrom:
             - secretRef:
@@ -377,7 +377,7 @@ spec:
           image: {{ include "attune.image" (dict "root" . "image" .Values.images.supervisor) | quote }}
           imagePullPolicy: {{ .Values.images.supervisor.pullPolicy | quote }}
           {{- include "attune.containerSecurityContext" (dict "root" . "identity" "attune") | nindent 10 }}
-          command: ["attune-supervisor"]
+          command: ["/usr/local/bin/attune-service"]
           args: ["migrate-storage"]
           envFrom:
             - secretRef:
