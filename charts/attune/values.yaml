@@ -4,7 +4,7 @@ fullnameOverride: ""
 global:
   imageRegistry: ghcr.io
   imageNamespace: attune-system
-  imageTag: "0.6.2"
+  imageTag: "0.6.3"
   imagePullSecrets: []
 
 # Secure workload defaults satisfy Kubernetes Pod Security Admission's
