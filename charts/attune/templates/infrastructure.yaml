@@ -120,6 +120,17 @@ spec:
         {{- include "attune.componentLabels" (dict "root" . "component" "rabbitmq") | nindent 8 }}
     spec:
       {{- include "attune.podSecurityContext" (dict "root" . "override" (dict "fsGroup" .Values.workloadSecurity.identities.rabbitmq.runAsGroup "fsGroupChangePolicy" "OnRootMismatch")) | nindent 6 }}
+      initContainers:
+        - name: ensure-cookie-permissions
+          image: {{ printf "%s:%s" .Values.rabbitmq.image.repository .Values.rabbitmq.image.tag | quote }}
+          imagePullPolicy: IfNotPresent
+          {{- include "attune.containerSecurityContext" (dict "root" . "identity" "rabbitmq") | nindent 10 }}
+          command: ["/bin/sh", "-ec"]
+          args:
+            - 'if [ -e /var/lib/rabbitmq/.erlang.cookie ]; then chmod 0600 /var/lib/rabbitmq/.erlang.cookie; fi'
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/rabbitmq
       containers:
         - name: rabbitmq
           image: {{ printf "%s:%s" .Values.rabbitmq.image.repository .Values.rabbitmq.image.tag | quote }}

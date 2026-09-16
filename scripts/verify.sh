@@ -696,6 +696,16 @@ if [[ "$storage_cutover_command_count" -ne 2 ]]; then
   exit 1
 fi
 
+rabbitmq_cookie_init_count="$({
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc '[select(.kind == "StatefulSet" and .spec.template.metadata.labels."app.kubernetes.io/component" == "rabbitmq") | .spec.template.spec.initContainers[] | select(.name == "ensure-cookie-permissions" and (.args[0] | contains("chmod 0600 /var/lib/rabbitmq/.erlang.cookie")))] | length' - \
+    < "$render_dir/attune-object.yaml"
+})"
+if [[ "$rabbitmq_cookie_init_count" -ne 1 ]]; then
+  printf 'RabbitMQ expected one cookie permission init container, found %s\n' "$rabbitmq_cookie_init_count" >&2
+  exit 1
+fi
+
 object_core_wait_count="$(grep -c 'name: wait-for-core-pack' "$render_dir/attune-object.yaml")"
 if [[ "$object_core_wait_count" -ne 3 ]]; then
   printf 'object mode expected executor and both worker pools to wait for the core pack, found %s\n' "$object_core_wait_count" >&2
