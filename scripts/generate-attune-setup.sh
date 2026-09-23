@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-readonly TIMESCALE_IMAGE="docker.io/timescale/timescaledb-ha:pg16.15-ts2.29.2@sha256:903669a95321e439a181e2b350d6242a0af2e0ed2629196489780d1e58c46816"
+readonly TIMESCALE_IMAGE="docker.io/timescale/timescaledb-ha:pg18.6-ts2.30.1@sha256:131bfdf82ec0dfe42eaa3f4a189f8e04b7b1dc2b27705cfd921e55ebef339840"
 
 namespace="attune"
 release="attune"
@@ -679,7 +679,7 @@ metadata:
   namespace: "${namespace}"
 spec:
   images:
-    - major: 16
+    - major: 18
       image: ${TIMESCALE_IMAGE}
 ---
 apiVersion: postgresql.cnpg.io/v1
@@ -693,7 +693,7 @@ spec:
     apiGroup: postgresql.cnpg.io
     kind: ImageCatalog
     name: "${image_catalog}"
-    major: 16
+    major: 18
   imagePullPolicy: IfNotPresent
   postgresUID: 1000
   postgresGID: 1000

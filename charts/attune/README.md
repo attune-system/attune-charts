@@ -11,6 +11,100 @@ This chart installs the Attune platform, including these components:
 The chart defaults target a small single-node k3s cluster. All platform
 Deployments use one replica, and shared claims use `ReadWriteOnce`.
 
+The bundled services use digest-pinned TimescaleDB `2.30.1-pg18` and RabbitMQ
+`4.3.6-management-alpine` images. Value overrides can replace either pin.
+PostgreSQL 16 data requires a logical backup and restore into PostgreSQL 18.
+The chart does not run `pg_upgrade` or copy database files.
+
+The only valid PostgreSQL major-upgrade value pairs are `refuse+complete` and
+`startFresh+cutover`. Fresh installs use `refuse+complete` and do not render the
+major preflight hook. Keep `refuse+complete` for later PostgreSQL 18 upgrades.
+
+### Upgrade bundled PostgreSQL 16 to 18
+
+This procedure applies only to the PostgreSQL StatefulSet bundled with this
+chart. It requires downtime for both stages and the restore between them.
+
+Before the cutover:
+
+- Verify that the current database is PostgreSQL 16 and that the old bundled
+  StatefulSet runtime uses `PGDATA=/var/lib/postgresql/data/pgdata`. The new
+  guard mounts the PVC root at `/var/lib/postgresql`, where it sees the same
+  version marker at `/var/lib/postgresql/pgdata/PG_VERSION`.
+- Create a logical backup, include the application role needed by restored
+  object ownership, and test the complete restore procedure on PostgreSQL 18.
+- Take a storage snapshot or equivalent backup of the PostgreSQL PVC.
+- Verify the administrator Secret mappings and access to the runtime Secret.
+- Confirm that the cluster can pull the pinned TimescaleDB image and has enough
+  free PVC capacity for a second database directory.
+- Finish any `sharedVolume` to `object` storage cutover first. The chart rejects
+  both cutovers in one Helm upgrade.
+- Drain RabbitMQ and save any broker definitions you intend to recreate. The
+  cutover starts RabbitMQ 4 with a fresh store; queued messages and definitions
+  in the RabbitMQ 3 store are discarded.
+
+Use the same complete values file on both commands. Do not use
+`--reuse-values`. It can retain `startFresh+cutover` after the first stage and
+leave Attune scaled down.
+
+Start the cutover:
+
+```bash
+helm upgrade attune attune/attune \
+  --namespace attune \
+  --values values.yaml \
+  --set database.postgresql.majorUpgradePolicy=startFresh \
+  --set database.postgresql.majorUpgradeStage=cutover \
+  --set rabbitmq.majorUpgradePolicy=startFresh \
+  --wait \
+  --timeout 20m
+```
+
+The pre-upgrade Job accepts the old PostgreSQL 16 server or an already-started
+PostgreSQL 18 server. Helm then scales every Attune Deployment to zero, blocks
+the ordinary PostgreSQL Service, and starts PostgreSQL 18 in
+`/var/lib/postgresql/18/docker`. RabbitMQ starts version 4 against its fresh
+`mnesia-v4` directory. The chart suppresses database provisioning, migrations,
+bootstrap Jobs, and storage migration Jobs during this stage.
+
+Keep Attune down. Restore the tested logical backup through
+`<release>-attune-postgresql-maintenance`. The restore procedure must recreate
+or preserve the configured application role and object ownership. Verify the
+restored row counts, extensions, schema ownership, and application role access
+before continuing.
+
+Complete the cutover:
+
+```bash
+helm upgrade attune attune/attune \
+  --namespace attune \
+  --values values.yaml \
+  --set database.postgresql.majorUpgradePolicy=refuse \
+  --set database.postgresql.majorUpgradeStage=complete \
+  --set rabbitmq.majorUpgradePolicy=refuse \
+  --wait \
+  --wait-for-jobs \
+  --timeout 20m
+```
+
+The second preflight proves PostgreSQL 18 through the maintenance Service before
+any mutating hook runs. Bundled database provisioning, migrations, `init-user`,
+`init-packs`, and storage migration Jobs also use that Service. The ordinary
+application Service becomes routable only after Helm applies the complete
+stage.
+
+If either stage fails, keep ingress and producers stopped, inspect the failed
+Job or PostgreSQL Pod, fix the cause, and retry the same command. Do not switch
+stages to bypass a failure. Do not use Helm automatic rollback across this
+cutover. After writes reach PostgreSQL 18, rollback requires stopping writes and
+restoring the PostgreSQL 16 database and PVC snapshot as one tested operation.
+The chart keeps the old PostgreSQL 16 directory, but that directory is not a
+rollback guarantee.
+
+RabbitMQ major-version handling is separate. This PostgreSQL procedure does not
+migrate RabbitMQ definitions or queued messages. The chart does not install or
+generate a RabbitMQ operator.
+
 ## Install on k3s
 
 Create the runtime Secret before installing the chart. Keep this Secret out of
@@ -262,10 +356,19 @@ Secrets, and an optional CloudNativePG manifest:
 ```
 
 CloudNativePG mode uses three instances by default. It pins
-`timescale/timescaledb-ha:pg16.15-ts2.29.2` through an `ImageCatalog`, loads
+`timescale/timescaledb-ha:pg18.6-ts2.30.1` through an `ImageCatalog`, loads
 TimescaleDB, and creates the `timescaledb`, `pgcrypto`, and `uuid-ossp`
 extensions. Install the CloudNativePG operator before applying the generated
 `timescaledb.yaml`.
+
+CloudNativePG `v1.30.1` is the recommended operator version for the generated
+resources. The repository does not install the operator. It also does not
+install or generate a RabbitMQ operator; RabbitMQ remains a chart-managed
+StatefulSet unless you configure an external service.
+
+The generated PostgreSQL 18 `ImageCatalog` is for new clusters. Do not apply it
+as an in-place major-version change to a PostgreSQL 16 CloudNativePG cluster.
+Use CloudNativePG's major-upgrade or logical backup-and-restore procedure.
 
 The generator places the CloudNativePG `Cluster`, `ImageCatalog`, and bootstrap
 Secret in the Attune release namespace. Its generated `<cluster>-rw` hostname
@@ -649,12 +752,20 @@ reverse migration or restore the pre-cutover database and PVC backups as one
 consistent set.
 
 On an object-mode upgrade, the core pack bootstrap is a `post-upgrade` hook. It
-waits for `/health` through a Service that selects only API Pods carrying the
+waits for `/health/ready` through a Service that selects only API Pods carrying the
 target Helm release revision, then publishes the bundled pack through the
 authenticated upload API. It uses a temporary integration identity rather than
 the initial administrator password. Old API Pods cannot satisfy this gate.
-Shared-volume upgrades keep the bootstrap as a `pre-upgrade` hook. Executor and
-worker init containers then wait for the active core pack through the API.
+The bootstrap then waits for transitional `/health/content`. This check covers
+active core and coarse action/sensor host availability until required-pack locks
+and candidate evidence replace it in issue #75.
+
+Shared-volume upgrades keep the bootstrap as a `pre-upgrade` hook and may retain
+the revision marker for that Job. API, executor, action-worker, and sensor-worker
+Pods never wait for the marker or active core. They start from platform readiness
+through the ordinary internal API Service, so that Service remains routable while
+content health is false. API readiness uses `/health/ready`; liveness uses
+`/health/live`. Bootstrap Jobs and workload waits have a 300-second deadline.
 Per-service storage modes are rejected by the values schema.
 
 Run a disruption test against a dedicated three-node test release. The command

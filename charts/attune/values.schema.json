@@ -163,9 +163,25 @@
         "postgresql": {
           "type": "object",
           "additionalProperties": true,
-          "required": ["enabled", "maxConnections", "admin", "provisioning", "image", "persistence"],
+          "required": ["enabled", "majorUpgradePolicy", "majorUpgradeStage", "maxConnections", "admin", "provisioning", "image", "persistence"],
+          "oneOf": [
+            {
+              "properties": {
+                "majorUpgradePolicy": { "const": "refuse" },
+                "majorUpgradeStage": { "const": "complete" }
+              }
+            },
+            {
+              "properties": {
+                "majorUpgradePolicy": { "const": "startFresh" },
+                "majorUpgradeStage": { "const": "cutover" }
+              }
+            }
+          ],
           "properties": {
             "enabled": { "type": "boolean" },
+            "majorUpgradePolicy": { "type": "string", "enum": ["refuse", "startFresh"] },
+            "majorUpgradeStage": { "type": "string", "enum": ["complete", "cutover"] },
             "maxConnections": { "type": "integer", "minimum": 1 },
             "admin": {
               "type": "object",
@@ -200,6 +216,7 @@
         "port",
         "managementPort",
         "enabled",
+        "majorUpgradePolicy",
         "admin",
         "provisioning",
         "image",
@@ -210,6 +227,7 @@
         "port": { "$ref": "#/definitions/port" },
         "managementPort": { "$ref": "#/definitions/port" },
         "enabled": { "type": "boolean" },
+        "majorUpgradePolicy": { "type": "string", "enum": ["refuse", "startFresh"] },
         "admin": {
           "type": "object",
           "additionalProperties": true,

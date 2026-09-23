@@ -4,7 +4,7 @@ fullnameOverride: ""
 global:
   imageRegistry: ghcr.io
   imageNamespace: attune-system
-  imageTag: "0.6.3"
+  imageTag: "0.7.0"
   imagePullSecrets: []
 
 # Secure workload defaults satisfy Kubernetes Pod Security Admission's
@@ -92,6 +92,10 @@ database:
   connectionReserve: 20
   postgresql:
     enabled: true
+    # PostgreSQL 16 cutover requires startFresh+cutover, followed by
+    # refuse+complete after restoring the database into PostgreSQL 18.
+    majorUpgradePolicy: refuse
+    majorUpgradeStage: complete
     maxConnections: 100
     admin:
       # Set an existing administrator Secret before enabling provisioning.
@@ -104,7 +108,7 @@ database:
       activeDeadlineSeconds: 600
     image:
       repository: timescale/timescaledb
-      tag: 2.17.2-pg16
+      tag: 2.30.1-pg18@sha256:9dede0e3ccc071cf71935b17f76bf243331df0b1575338c8ac294640fcf12a36
     persistence:
       accessModes:
         - ReadWriteOnce
@@ -117,6 +121,8 @@ rabbitmq:
   port: 5672
   managementPort: 15672
   enabled: true
+  # Existing RabbitMQ 3 data requires an explicit migration or reset.
+  majorUpgradePolicy: refuse
   admin:
     # Set an existing administrator Secret before enabling provisioning.
     # Without one, bundled RabbitMQ keeps the legacy shared account.
@@ -132,7 +138,7 @@ rabbitmq:
       pullPolicy: IfNotPresent
   image:
     repository: rabbitmq
-    tag: 3.13-management-alpine
+    tag: 4.3.6-management-alpine@sha256:1aab4d911053f3ee4ff9bb231f5192ebd6a12281f8044910256a667fdb04108d
   persistence:
     accessModes:
       - ReadWriteOnce
@@ -267,11 +273,11 @@ jobs:
     ttlSecondsAfterFinished: 300
     resources: {}
   initUser:
-    activeDeadlineSeconds: 600
+    activeDeadlineSeconds: 300
     ttlSecondsAfterFinished: 300
     resources: {}
   initPacks:
-    activeDeadlineSeconds: 600
+    activeDeadlineSeconds: 300
     ttlSecondsAfterFinished: 300
     resources: {}
   storageMigration:

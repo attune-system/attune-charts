@@ -1,4 +1,109 @@
 {{- if .Values.database.postgresql.enabled }}
+{{- if .Release.IsUpgrade }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ printf "%s-postgresql-major-preflight" (include "attune.fullname" .) | trunc 63 | trimSuffix "-" | quote }}
+  labels:
+    {{- include "attune.labels" . | nindent 4 }}
+    app.kubernetes.io/component: postgresql-major-preflight
+  annotations:
+    helm.sh/hook: pre-upgrade
+    helm.sh/hook-weight: "-50"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  activeDeadlineSeconds: 180
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 300
+  template:
+    metadata:
+      labels:
+        {{- include "attune.componentLabels" (dict "root" . "component" "postgresql-major-preflight") | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      {{- include "attune.podSecurityContext" (dict "root" .) | nindent 6 }}
+      containers:
+        - name: postgresql-major-preflight
+          image: postgres:18-alpine
+          {{- include "attune.containerSecurityContext" (dict "root" . "identity" "postgres") | nindent 10 }}
+          command: ["/bin/sh", "-ec"]
+          args:
+            - |
+              deadline=$(( $(date +%s) + 150 ))
+              export PGCONNECT_TIMEOUT=5
+              export PGOPTIONS='-c default_transaction_read_only=on'
+
+              server_major() {
+                PGPASSWORD="$POSTGRES_ADMIN_PASSWORD" psql \
+                  -h "$1" -p "$DB_PORT" -U "$POSTGRES_ADMIN_USER" \
+                  -d "$DB_NAME" -Atqc 'SHOW server_version_num' 2>/dev/null | cut -c1-2
+              }
+
+              while [ "$(date +%s)" -lt "$deadline" ]; do
+                maintenance_major="$(server_major "$MAINTENANCE_DB_HOST" || true)"
+                {{- if eq .Values.database.postgresql.majorUpgradeStage "complete" }}
+                if [ "$maintenance_major" = 18 ]; then
+                  echo "PostgreSQL 18 is ready through the maintenance Service"
+                  exit 0
+                fi
+                if [ -n "$maintenance_major" ]; then
+                  echo "maintenance Service reached PostgreSQL major $maintenance_major, expected 18" >&2
+                  exit 1
+                fi
+                ordinary_major="$(server_major "$ORDINARY_DB_HOST" || true)"
+                if [ "$ordinary_major" = 18 ]; then
+                  echo "PostgreSQL 18 is ready through the existing ordinary Service"
+                  exit 0
+                fi
+                if [ "$ordinary_major" = 16 ]; then
+                  echo "refusing complete stage: the existing ordinary Service still reaches PostgreSQL 16" >&2
+                  echo "run the documented startFresh+cutover stage before retrying refuse+complete" >&2
+                  exit 1
+                fi
+                if [ -n "$ordinary_major" ]; then
+                  echo "ordinary Service reached unsupported PostgreSQL major $ordinary_major" >&2
+                  exit 1
+                fi
+                {{- else }}
+                if [ "$maintenance_major" = 18 ]; then
+                  echo "PostgreSQL 18 cutover has already started"
+                  exit 0
+                fi
+                ordinary_major="$(server_major "$ORDINARY_DB_HOST" || true)"
+                if [ "$ordinary_major" = 16 ] || [ "$ordinary_major" = 18 ]; then
+                  echo "PostgreSQL $ordinary_major is reachable before cutover"
+                  exit 0
+                fi
+                if [ -n "$ordinary_major" ] || [ -n "$maintenance_major" ]; then
+                  echo "cutover preflight reached an unsupported PostgreSQL major" >&2
+                  exit 1
+                fi
+                {{- end }}
+                sleep 2
+              done
+              echo "PostgreSQL major preflight timed out after 150s" >&2
+              exit 1
+          env:
+            - name: POSTGRES_ADMIN_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "attune.postgresqlAdminSecretName" . | quote }}
+                  key: {{ .Values.database.postgresql.admin.usernameKey | quote }}
+            - name: POSTGRES_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "attune.postgresqlAdminSecretName" . | quote }}
+                  key: {{ .Values.database.postgresql.admin.passwordKey | quote }}
+            - name: DB_NAME
+              value: {{ .Values.database.database | quote }}
+            - name: DB_PORT
+              value: {{ .Values.database.port | quote }}
+            - name: ORDINARY_DB_HOST
+              value: {{ include "attune.postgresqlServiceName" . | quote }}
+            - name: MAINTENANCE_DB_HOST
+              value: {{ include "attune.postgresqlMaintenanceServiceName" . | quote }}
+---
+{{- end }}
 apiVersion: v1
 kind: Service
 metadata:
@@ -8,6 +113,24 @@ metadata:
 spec:
   selector:
     {{- include "attune.componentLabels" (dict "root" . "component" "postgresql") | nindent 4 }}
+    {{- if eq .Values.database.postgresql.majorUpgradeStage "cutover" }}
+    attune.dev/postgresql-major: cutover-blocked
+    {{- end }}
+  ports:
+    - name: postgres
+      port: {{ .Values.database.port }}
+      targetPort: postgres
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "attune.postgresqlMaintenanceServiceName" . | quote }}
+  labels:
+    {{- include "attune.labels" . | nindent 4 }}
+spec:
+  selector:
+    {{- include "attune.componentLabels" (dict "root" . "component" "postgresql") | nindent 4 }}
+    attune.dev/postgresql-major: "18"
   ports:
     - name: postgres
       port: {{ .Values.database.port }}
@@ -29,8 +152,26 @@ spec:
     metadata:
       labels:
         {{- include "attune.componentLabels" (dict "root" . "component" "postgresql") | nindent 8 }}
+        attune.dev/postgresql-major: "18"
     spec:
       {{- include "attune.podSecurityContext" (dict "root" . "override" (dict "fsGroup" .Values.workloadSecurity.identities.postgres.runAsGroup "fsGroupChangePolicy" "OnRootMismatch")) | nindent 6 }}
+      initContainers:
+        - name: guard-postgresql-major-upgrade
+          image: busybox:1.36
+          {{- include "attune.containerSecurityContext" (dict "root" . "identity" "postgres") | nindent 10 }}
+          command: ["/bin/sh", "-ec"]
+          args:
+            - |
+              legacy=/var/lib/postgresql/pgdata/PG_VERSION
+              target=/var/lib/postgresql/18/docker/PG_VERSION
+              if [ -f "$legacy" ] && [ ! -f "$target" ] && [ "{{ .Values.database.postgresql.majorUpgradeStage }}" != cutover ]; then
+                echo "PostgreSQL 16 data exists, but the PostgreSQL 18 data directory is empty." >&2
+                echo "Run the documented startFresh+cutover stage before the refuse+complete stage." >&2
+                exit 1
+              fi
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql
       containers:
         - name: postgresql
           image: {{ printf "%s:%s" .Values.database.postgresql.image.repository .Values.database.postgresql.image.tag | quote }}
@@ -51,7 +192,7 @@ spec:
             - name: POSTGRES_DB
               value: {{ .Values.database.database | quote }}
             - name: PGDATA
-              value: /var/lib/postgresql/data/pgdata
+              value: /var/lib/postgresql/18/docker
           ports:
             - name: postgres
               containerPort: 5432
@@ -69,7 +210,7 @@ spec:
             {{- toYaml .Values.database.postgresql.resources | nindent 12 }}
           volumeMounts:
             - name: data
-              mountPath: /var/lib/postgresql/data
+              mountPath: /var/lib/postgresql
   volumeClaimTemplates:
     - metadata:
         name: data
@@ -121,6 +262,22 @@ spec:
     spec:
       {{- include "attune.podSecurityContext" (dict "root" . "override" (dict "fsGroup" .Values.workloadSecurity.identities.rabbitmq.runAsGroup "fsGroupChangePolicy" "OnRootMismatch")) | nindent 6 }}
       initContainers:
+        - name: guard-rabbitmq-major-upgrade
+          image: busybox:1.36
+          {{- include "attune.containerSecurityContext" (dict "root" . "identity" "rabbitmq") | nindent 10 }}
+          command: ["/bin/sh", "-ec"]
+          args:
+            - |
+              legacy="$(find /var/lib/rabbitmq/mnesia -mindepth 1 -print -quit 2>/dev/null || true)"
+              target="$(find /var/lib/rabbitmq/mnesia-v4 -mindepth 1 -print -quit 2>/dev/null || true)"
+              if [ -n "$legacy" ] && [ -z "$target" ] && [ "{{ .Values.rabbitmq.majorUpgradePolicy }}" != startFresh ]; then
+                echo "RabbitMQ 3 data exists, but the RabbitMQ 4 data directory is empty." >&2
+                echo "Migrate RabbitMQ, or set rabbitmq.majorUpgradePolicy=startFresh to start with an empty RabbitMQ 4 database." >&2
+                exit 1
+              fi
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/rabbitmq
         - name: ensure-cookie-permissions
           image: {{ printf "%s:%s" .Values.rabbitmq.image.repository .Values.rabbitmq.image.tag | quote }}
           imagePullPolicy: IfNotPresent
@@ -149,6 +306,8 @@ spec:
                   key: {{ .Values.rabbitmq.admin.passwordKey | quote }}
             - name: RABBITMQ_DEFAULT_VHOST
               value: /
+            - name: RABBITMQ_MNESIA_BASE
+              value: /var/lib/rabbitmq/mnesia-v4
           ports:
             - name: amqp
               containerPort: 5672

@@ -5,7 +5,7 @@ publishes charts for the Attune platform and its public sites.
 
 | Chart | Version | Purpose |
 | --- | --- | --- |
-| `attune` | `0.8.3` | Attune services, workers, PostgreSQL, and RabbitMQ |
+| `attune` | `0.8.5` | Attune services, workers, PostgreSQL, and RabbitMQ |
 | `attune-site` | `0.1.5` | `attunedev.org` and its inquiry form |
 | `attune-docs-site` | `0.1.3` | `docs.attunedev.org` |
 
@@ -59,10 +59,18 @@ CloudNativePG with bundled RabbitMQ is the default:
 
 This mode creates `attune-setup/namespace.yaml`, `secrets.yaml`,
 `timescaledb.yaml`, and `values.yaml`. It uses
-`timescale/timescaledb-ha:pg16.15-ts2.29.2` through a CloudNativePG
+`timescale/timescaledb-ha:pg18.6-ts2.30.1` through a CloudNativePG
 `ImageCatalog`, pinned to its multi-architecture digest. Run the printed
 commands in order. Install the CloudNativePG operator before applying the
 generated `timescaledb.yaml`.
+
+CloudNativePG `v1.30.1` is the recommended operator version for these generated
+resources. The setup script does not install the CloudNativePG operator. It
+also does not install or generate a RabbitMQ operator.
+
+Use this PostgreSQL 18 catalog for new clusters. Do not apply it as an in-place
+major-version change to an existing PostgreSQL 16 CloudNativePG cluster. Follow
+CloudNativePG's major-upgrade or logical backup-and-restore procedure instead.
 
 Longhorn RWX requires the NFSv4 client package on every schedulable node. On
 Ubuntu and Debian nodes, install `nfs-common` before starting Attune pods.
@@ -106,6 +114,47 @@ standalone TimescaleDB/PostgreSQL container:
 Bundled mode creates separate administrator and application credentials,
 enables the chart's account provisioner, and does not create
 `timescaledb.yaml`.
+
+Bundled PostgreSQL 16 upgrades require a two-stage Helm cutover with downtime.
+Back up the database and PostgreSQL PVC, test a logical restore on PostgreSQL
+18, and finish any shared-volume to object-storage migration first. The first
+stage also starts a fresh RabbitMQ 4 store, so drain the broker and accept that
+queued messages and broker definitions will be discarded. Use a full values
+file on both commands. Do not use `--reuse-values`.
+
+```bash
+helm upgrade attune attune/attune \
+  --namespace attune \
+  --values values.yaml \
+  --set database.postgresql.majorUpgradePolicy=startFresh \
+  --set database.postgresql.majorUpgradeStage=cutover \
+  --set rabbitmq.majorUpgradePolicy=startFresh \
+  --wait \
+  --timeout 20m
+```
+
+Restore the PostgreSQL 16 logical backup into PostgreSQL 18 through
+`attune-attune-postgresql-maintenance`. Preserve the configured application role
+and object ownership. After verifying the restore, complete the upgrade:
+
+```bash
+helm upgrade attune attune/attune \
+  --namespace attune \
+  --values values.yaml \
+  --set database.postgresql.majorUpgradePolicy=refuse \
+  --set database.postgresql.majorUpgradeStage=complete \
+  --set rabbitmq.majorUpgradePolicy=refuse \
+  --wait \
+  --wait-for-jobs \
+  --timeout 20m
+```
+
+Attune remains scaled to zero from the first command until the second command
+succeeds. Retry a failed stage with the same command. Do not use automatic Helm
+rollback across the cutover. Once PostgreSQL 18 accepts writes, rollback means
+stopping writes and restoring the PostgreSQL 16 database and PVC backup. The
+chart does not perform the logical restore or guarantee rollback from the old
+data directory. See the chart README for prerequisites and checks.
 
 For independently managed TimescaleDB and RabbitMQ, provide their existing
 service passwords through the environment:
@@ -181,7 +230,7 @@ helm upgrade --install attune attune/attune \
   --timeout 20m
 ```
 
-The platform chart pulls Attune `0.6.3` images from
+The platform chart pulls Attune `0.7.0` images from
 `ghcr.io/attune-system/attune`. Apply the generated namespace, Secret, and
 optional CloudNativePG manifests before installation. The chart does not accept
 credentials through Helm values.
@@ -211,7 +260,7 @@ It pins the release version instead of using the mutable `latest` image tag.
 Run the same update locally with:
 
 ```bash
-./scripts/update-attune-release.py 0.6.0
+./scripts/update-attune-release.py 0.7.0
 ./scripts/package.sh
 ```
 

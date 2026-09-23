@@ -11,7 +11,7 @@ metadata:
     {{- include "attune.labels" $ | nindent 4 }}
     app.kubernetes.io/component: {{ $component | quote }}
 spec:
-  replicas: {{ .replicas | default 1 }}
+  replicas: {{ ternary 0 (int (.replicas | default 1)) (eq (include "attune.postgresqlMajorCutover" $) "true") }}
   selector:
     matchLabels:
       {{- include "attune.selectorLabels" $ | nindent 6 }}
@@ -65,7 +65,7 @@ spec:
             - name: agent-bin
               mountPath: /opt/attune/agent
         - name: wait-for-schema
-          image: postgres:16-alpine
+          image: postgres:18-alpine
           {{- include "attune.containerSecurityContext" (dict "root" $ "identity" "postgres") | nindent 10 }}
           command: ["/bin/sh", "-ec"]
           args:
@@ -77,7 +77,7 @@ spec:
           envFrom:
             - secretRef:
                 name: {{ include "attune.secretName" $ | quote }}
-        {{- include "attune.waitForCorePack" $ | nindent 8 }}
+        {{- include "attune.waitForApiPlatform" $ | nindent 8 }}
         {{- if and $.Values.rabbitmq.enabled $.Values.rabbitmq.provisioning.enabled }}
         {{- include "attune.waitForRabbitmqCredentials" $ | nindent 8 }}
         {{- else }}
@@ -176,7 +176,7 @@ metadata:
     {{- include "attune.labels" $ | nindent 4 }}
     app.kubernetes.io/component: {{ $component | quote }}
 spec:
-  replicas: {{ .replicas | default 1 }}
+  replicas: {{ ternary 0 (int (.replicas | default 1)) (eq (include "attune.postgresqlMajorCutover" $) "true") }}
   selector:
     matchLabels:
       {{- include "attune.selectorLabels" $ | nindent 6 }}
@@ -226,7 +226,7 @@ spec:
             - name: agent-bin
               mountPath: /opt/attune/agent
         - name: wait-for-schema
-          image: postgres:16-alpine
+          image: postgres:18-alpine
           {{- include "attune.containerSecurityContext" (dict "root" $ "identity" "postgres") | nindent 10 }}
           command: ["/bin/sh", "-ec"]
           args:
@@ -238,7 +238,7 @@ spec:
           envFrom:
             - secretRef:
                 name: {{ include "attune.secretName" $ | quote }}
-        {{- include "attune.waitForCorePack" $ | nindent 8 }}
+        {{- include "attune.waitForApiPlatform" $ | nindent 8 }}
         {{- if and $.Values.rabbitmq.enabled $.Values.rabbitmq.provisioning.enabled }}
         {{- include "attune.waitForRabbitmqCredentials" $ | nindent 8 }}
         {{- else }}

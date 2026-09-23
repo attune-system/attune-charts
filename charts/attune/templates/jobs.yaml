@@ -1,3 +1,4 @@
+{{- if ne .Values.database.postgresql.majorUpgradeStage "cutover" }}
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -36,6 +37,10 @@ spec:
             - secretRef:
                 name: {{ include "attune.secretName" . | quote }}
           env:
+            {{- if .Values.database.postgresql.enabled }}
+            - name: DB_HOST
+              value: {{ include "attune.databaseMutationHost" . | quote }}
+            {{- end }}
             - name: MIGRATIONS_DIR
               value: /migrations
             # The 0.5.3 index seeder passes connection URLs through PGDATABASE,
@@ -61,7 +66,7 @@ metadata:
     helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
   {{- end }}
 spec:
-  activeDeadlineSeconds: {{ .Values.jobs.initUser.activeDeadlineSeconds | default 600 }}
+  activeDeadlineSeconds: {{ .Values.jobs.initUser.activeDeadlineSeconds | default 300 }}
   ttlSecondsAfterFinished: {{ .Values.jobs.initUser.ttlSecondsAfterFinished }}
   template:
     metadata:
@@ -79,13 +84,23 @@ spec:
           image: {{ include "attune.image" (dict "root" . "image" .Values.images.initUser) | quote }}
           imagePullPolicy: {{ .Values.images.initUser.pullPolicy | quote }}
           {{- include "attune.containerSecurityContext" (dict "root" . "identity" "postgres") | nindent 10 }}
+          {{- if .Values.database.postgresql.enabled }}
+          env:
+            - name: DB_HOST
+              value: {{ include "attune.databaseMutationHost" . | quote }}
+            - name: ATTUNE__DATABASE__URL
+              value: ""
+          {{- end }}
           envFrom:
             - secretRef:
                 name: {{ include "attune.secretName" . | quote }}
           command: ["/bin/sh", "-ec"]
           args:
             - |
+              deadline=$(( $(date +%s) + {{ .Values.jobs.initUser.activeDeadlineSeconds }} ))
+              export PGCONNECT_TIMEOUT=5
               until PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -tAc "SELECT to_regclass('${DB_SCHEMA}.identity')" | grep -q identity; do
+                [ "$(date +%s)" -lt "$deadline" ] || { echo "database schema timed out after {{ .Values.jobs.initUser.activeDeadlineSeconds }}s"; exit 1; }
                 echo "waiting for database schema";
                 sleep 2;
               done
@@ -107,7 +122,7 @@ metadata:
     helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
   {{- end }}
 spec:
-  activeDeadlineSeconds: {{ .Values.jobs.initPacks.activeDeadlineSeconds | default 600 }}
+  activeDeadlineSeconds: {{ .Values.jobs.initPacks.activeDeadlineSeconds | default 300 }}
   ttlSecondsAfterFinished: {{ .Values.jobs.initPacks.ttlSecondsAfterFinished }}
   template:
     metadata:
@@ -128,27 +143,70 @@ spec:
           envFrom:
             - secretRef:
                 name: {{ include "attune.secretName" . | quote }}
-          {{- if eq .Values.storage.mode "object" }}
+          {{- if or (eq .Values.storage.mode "object") .Values.database.postgresql.enabled }}
           env:
+            {{- if .Values.database.postgresql.enabled }}
+            - name: DB_HOST
+              value: {{ include "attune.databaseMutationHost" . | quote }}
+            - name: ATTUNE__DATABASE__URL
+              value: ""
+            {{- end }}
+            {{- if eq .Values.storage.mode "object" }}
             - name: ATTUNE_BOOTSTRAP_MODE
               value: api
             - name: ATTUNE_API_URL
               value: {{ printf "http://%s:%v" (include "attune.revisionApiServiceName" .) .Values.api.service.port | quote }}
+            {{- end }}
           {{- end }}
           command: ["/bin/sh", "-ec"]
           args:
             - |
+              deadline=$(( $(date +%s) + {{ .Values.jobs.initPacks.activeDeadlineSeconds }} ))
+              export PGCONNECT_TIMEOUT=5
+              until python3 - <<'PY'
+              import os
+              import psycopg2
+              from psycopg2 import sql
+
+              with psycopg2.connect(
+                  host=os.environ["DB_HOST"],
+                  port=os.environ["DB_PORT"],
+                  user=os.environ["DB_USER"],
+                  password=os.environ["DB_PASSWORD"],
+                  dbname=os.environ["DB_NAME"],
+              ) as connection:
+                  with connection.cursor() as cursor:
+                      cursor.execute(
+                          sql.SQL("SET search_path TO {}, public").format(
+                              sql.Identifier(os.environ["DB_SCHEMA"])
+                          )
+                      )
+                      cursor.execute(
+                          "SELECT EXISTS (SELECT 1 FROM permission_assignment pa "
+                          "JOIN identity i ON i.id = pa.identity "
+                          "JOIN permission_set ps ON ps.id = pa.permset "
+                          "WHERE i.login = %s AND ps.ref = 'core.admin')",
+                          (os.environ["DEFAULT_ADMIN_LOGIN"],),
+                      )
+                      raise SystemExit(0 if cursor.fetchone()[0] else 1)
+              PY
+              do
+                [ "$(date +%s)" -lt "$deadline" ] || { echo "admin assignment timed out after {{ .Values.jobs.initPacks.activeDeadlineSeconds }}s"; exit 1; }
+                echo "waiting for initial administrator assignment"
+                sleep 2
+              done
               {{- if eq .Values.storage.mode "object" }}
               until python3 - <<'PY'
               import os
               import urllib.request
 
               with urllib.request.urlopen(
-                  f"{os.environ['ATTUNE_API_URL']}/health", timeout=5
+                  f"{os.environ['ATTUNE_API_URL']}/health/ready", timeout=5
               ) as response:
                   raise SystemExit(0 if 200 <= response.status < 300 else 1)
               PY
               do
+                [ "$(date +%s)" -lt "$deadline" ] || { echo "api platform readiness timed out after {{ .Values.jobs.initPacks.activeDeadlineSeconds }}s"; exit 1; }
                 echo "waiting for api";
                 sleep 2;
               done
@@ -319,6 +377,12 @@ spec:
           env:
             - name: ATTUNE_CONFIG
               value: /opt/attune/config.yaml
+            {{- if .Values.database.postgresql.enabled }}
+            - name: DB_HOST
+              value: {{ include "attune.databaseMutationHost" . | quote }}
+            - name: ATTUNE__DATABASE__URL
+              value: ""
+            {{- end }}
             - name: ATTUNE__DATABASE__SCHEMA
               value: {{ .Values.database.schema | quote }}
             - name: ATTUNE__DATABASE__MAX_CONNECTIONS
@@ -385,6 +449,12 @@ spec:
           env:
             - name: ATTUNE_CONFIG
               value: /opt/attune/config.yaml
+            {{- if .Values.database.postgresql.enabled }}
+            - name: DB_HOST
+              value: {{ include "attune.databaseMutationHost" . | quote }}
+            - name: ATTUNE__DATABASE__URL
+              value: ""
+            {{- end }}
             - name: ATTUNE__DATABASE__SCHEMA
               value: {{ .Values.database.schema | quote }}
             - name: ATTUNE__DATABASE__MAX_CONNECTIONS
@@ -411,4 +481,5 @@ spec:
         - name: legacy-artifacts
           persistentVolumeClaim:
             claimName: {{ printf "%s-artifacts" (include "attune.fullname" .) | quote }}
+{{- end }}
 {{- end }}

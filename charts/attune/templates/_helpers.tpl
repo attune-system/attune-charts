@@ -86,6 +86,22 @@ app.kubernetes.io/component: {{ .component | quote }}
 {{- end -}}
 {{- end -}}
 
+{{- define "attune.postgresqlMaintenanceServiceName" -}}
+{{- printf "%s-postgresql-maintenance" (include "attune.fullname" .) | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
+{{- define "attune.postgresqlMajorCutover" -}}
+{{- if eq .Values.database.postgresql.majorUpgradeStage "cutover" -}}true{{- else -}}false{{- end -}}
+{{- end -}}
+
+{{- define "attune.databaseMutationHost" -}}
+{{- if and .Values.database.postgresql.enabled (eq .Values.database.postgresql.majorUpgradeStage "complete") -}}
+{{- include "attune.postgresqlMaintenanceServiceName" . -}}
+{{- else -}}
+{{- include "attune.postgresqlServiceName" . -}}
+{{- end -}}
+{{- end -}}
+
 {{- define "attune.rabbitmqServiceName" -}}
 {{- if .Values.rabbitmq.host -}}
 {{- .Values.rabbitmq.host -}}
@@ -220,39 +236,24 @@ securityContext:
 {{- include "attune.podSecurityContext" (dict "root" $root "useLocalStorage" (eq $root.Values.storage.mode "object") "override" $override) -}}
 {{- end -}}
 
-{{- define "attune.waitForCorePack" -}}
-- name: wait-for-core-pack
-  {{- if eq .Values.storage.mode "sharedVolume" }}
+{{- define "attune.waitForApiPlatform" -}}
+- name: wait-for-api-platform
   image: busybox:1.36
   {{- include "attune.containerSecurityContext" (dict "root" . "identity" "helper") | nindent 2 }}
   command: ["/bin/sh", "-ec"]
   args:
     - |
-      until [ -f /opt/attune/packs/.attune-bootstrap-r{{ .Release.Revision }} ]; do
-        echo "waiting for current pack bootstrap";
-        sleep 2;
+      deadline=$(( $(date +%s) + 300 ))
+      until wget -T 5 -t 1 -qO- "http://{{ include "attune.apiServiceName" . }}:{{ .Values.api.service.port }}/health/ready" >/dev/null; do
+        [ "$(date +%s)" -lt "$deadline" ] || { echo "api platform readiness timed out after 300s"; exit 1; }
+        echo "waiting for api platform readiness"
+        sleep 2
       done
-  volumeMounts:
-    - name: packs
-      mountPath: /opt/attune/packs
-      readOnly: true
-  {{- else }}
-  image: {{ include "attune.image" (dict "root" . "image" .Values.images.initPacks) | quote }}
-  imagePullPolicy: {{ .Values.images.initPacks.pullPolicy | quote }}
-  {{- include "attune.containerSecurityContext" (dict "root" . "identity" "helper") | nindent 2 }}
-  command: ["python3", "/scripts/bootstrap_core_pack.py", "wait"]
-  envFrom:
-    - secretRef:
-        name: {{ include "attune.secretName" . | quote }}
-  env:
-    - name: ATTUNE_API_URL
-      value: {{ printf "http://%s:%v" (include "attune.apiServiceName" .) .Values.api.service.port | quote }}
-  {{- end }}
 {{- end -}}
 
 {{- define "attune.waitForDatabaseCredentials" -}}
 - name: wait-for-database-credentials
-  image: postgres:16-alpine
+  image: postgres:18-alpine
   {{- include "attune.containerSecurityContext" (dict "root" . "identity" "postgres") | nindent 2 }}
   command: ["/bin/sh", "-ec"]
   args:
@@ -264,6 +265,11 @@ securityContext:
   envFrom:
     - secretRef:
         name: {{ include "attune.secretName" . | quote }}
+  {{- if and .Values.database.postgresql.enabled (eq .Values.database.postgresql.majorUpgradeStage "complete") }}
+  env:
+    - name: DB_HOST
+      value: {{ include "attune.databaseMutationHost" . | quote }}
+  {{- end }}
 {{- end -}}
 
 {{- define "attune.waitForRabbitmqCredentials" -}}

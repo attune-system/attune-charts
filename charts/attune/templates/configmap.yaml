@@ -19,6 +19,16 @@
 {{- if and .Values.mcp.enabled (not .Values.mcp.auth.useBootstrapTestUser) (empty .Values.mcp.auth.existingSecret) }}
 {{- fail "mcp.auth.existingSecret is required when MCP does not use the bootstrap identity" }}
 {{- end }}
+{{- $postgresqlCutover := eq (include "attune.postgresqlMajorCutover" .) "true" }}
+{{- if and $postgresqlCutover (not .Release.IsUpgrade) }}
+{{- fail "database.postgresql.majorUpgradeStage=cutover is valid only during a Helm upgrade" }}
+{{- end }}
+{{- if and $postgresqlCutover (not .Values.database.postgresql.enabled) }}
+{{- fail "database.postgresql.majorUpgradeStage=cutover requires bundled PostgreSQL" }}
+{{- end }}
+{{- if and $postgresqlCutover (or .Values.storage.object.migrateFromSharedVolume (eq (include "attune.storageCutoverRequired" .) "true")) }}
+{{- fail "PostgreSQL major cutover and sharedVolume-to-object storage cutover must be separate Helm upgrades" }}
+{{- end }}
 {{- if gt (int .Values.api.executionLogStreams.perIdentityLimit) (int .Values.api.executionLogStreams.globalLimit) }}
 {{- fail "api.executionLogStreams.perIdentityLimit cannot exceed globalLimit" }}
 {{- end }}

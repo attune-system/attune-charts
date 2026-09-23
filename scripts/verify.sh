@@ -73,9 +73,23 @@ fi
 helm template verify "$root_dir/charts/attune" \
   --namespace verify \
   --values "$render_dir/setup/values.yaml" > "$render_dir/attune-cnpg.yaml"
+helm template verify "$root_dir/charts/attune" \
+  --namespace verify \
+  --is-upgrade \
+  --values "$render_dir/setup/values.yaml" > "$render_dir/attune-cnpg-upgrade.yaml"
 
 docker run --rm -i ghcr.io/yannh/kubeconform:v0.7.0 \
   -strict -summary < "$render_dir/attune-cnpg.yaml"
+
+external_major_preflight_count="$({
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc '[select(.kind == "Job" and .metadata.labels."app.kubernetes.io/component" == "postgresql-major-preflight")] | length' - \
+    < "$render_dir/attune-cnpg-upgrade.yaml"
+})"
+if [[ "$external_major_preflight_count" -ne 0 ]]; then
+  printf 'external PostgreSQL upgrade rendered the bundled major preflight\n' >&2
+  exit 1
+fi
 
 notifier_port="$({
   docker run --rm -i mikefarah/yq:4.47.2 \
@@ -213,6 +227,14 @@ helm template verify "$root_dir/charts/attune" \
   --is-upgrade \
   --values "$root_dir/charts/attune/ci/object-values.yaml" \
   > "$render_dir/attune-object-upgrade.yaml"
+helm template verify "$root_dir/charts/attune" \
+  --namespace verify \
+  --is-upgrade \
+  --values "$root_dir/charts/attune/ci/shared-volume-values.yaml" \
+  --set database.postgresql.majorUpgradePolicy=startFresh \
+  --set database.postgresql.majorUpgradeStage=cutover \
+  --set rabbitmq.majorUpgradePolicy=startFresh \
+  > "$render_dir/attune-postgresql-cutover.yaml"
 
 helm lint --strict "$root_dir/charts/attune" \
   --values "$root_dir/charts/attune/ci/object-ephemeral-values.yaml"
@@ -241,9 +263,128 @@ docker run --rm -i ghcr.io/yannh/kubeconform:v0.7.0 \
 docker run --rm -i ghcr.io/yannh/kubeconform:v0.7.0 \
   -strict -summary < "$render_dir/attune-object-upgrade.yaml"
 docker run --rm -i ghcr.io/yannh/kubeconform:v0.7.0 \
+  -strict -summary < "$render_dir/attune-postgresql-cutover.yaml"
+docker run --rm -i ghcr.io/yannh/kubeconform:v0.7.0 \
   -strict -summary < "$render_dir/attune-object-ephemeral.yaml"
 docker run --rm -i ghcr.io/yannh/kubeconform:v0.7.0 \
   -strict -summary < "$render_dir/attune-restricted.yaml"
+
+if helm template verify "$root_dir/charts/attune" \
+  --namespace verify \
+  --is-upgrade \
+  --values "$root_dir/charts/attune/ci/shared-volume-values.yaml" \
+  --set database.postgresql.majorUpgradePolicy=startFresh \
+  > /dev/null 2>&1; then
+  printf 'schema accepted startFresh+complete PostgreSQL major-upgrade values\n' >&2
+  exit 1
+fi
+if helm template verify "$root_dir/charts/attune" \
+  --namespace verify \
+  --values "$root_dir/charts/attune/ci/shared-volume-values.yaml" \
+  --set database.postgresql.majorUpgradePolicy=startFresh \
+  --set database.postgresql.majorUpgradeStage=cutover \
+  > /dev/null 2>&1; then
+  printf 'chart accepted PostgreSQL cutover during install\n' >&2
+  exit 1
+fi
+if helm template verify "$root_dir/charts/attune" \
+  --namespace verify \
+  --is-upgrade \
+  --values "$root_dir/charts/attune/ci/shared-volume-values.yaml" \
+  --set database.postgresql.enabled=false \
+  --set database.host=postgresql.example.com \
+  --set database.postgresql.majorUpgradePolicy=startFresh \
+  --set database.postgresql.majorUpgradeStage=cutover \
+  > /dev/null 2>&1; then
+  printf 'chart accepted PostgreSQL cutover with an external database\n' >&2
+  exit 1
+fi
+if helm template verify "$root_dir/charts/attune" \
+  --namespace verify \
+  --is-upgrade \
+  --values "$root_dir/charts/attune/ci/object-values.yaml" \
+  --set storage.object.migrateFromSharedVolume=true \
+  --set database.postgresql.majorUpgradePolicy=startFresh \
+  --set database.postgresql.majorUpgradeStage=cutover \
+  > /dev/null 2>&1; then
+  printf 'chart accepted simultaneous PostgreSQL and storage cutovers\n' >&2
+  exit 1
+fi
+
+install_major_preflight_count="$({
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc '[select(.kind == "Job" and .metadata.labels."app.kubernetes.io/component" == "postgresql-major-preflight")] | length' - \
+    < "$render_dir/attune-shared-volume.yaml"
+})"
+if [[ "$install_major_preflight_count" -ne 0 ]]; then
+  printf 'PostgreSQL major preflight rendered during install\n' >&2
+  exit 1
+fi
+
+cutover_deployment_contract="$({
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc '[select(.kind == "Deployment") | .spec.replicas] | [length, ([.[] | select(. == 0)] | length)] | @tsv' - \
+    < "$render_dir/attune-postgresql-cutover.yaml"
+})"
+cutover_non_preflight_job_count="$({
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc '[select(.kind == "Job" and .metadata.labels."app.kubernetes.io/component" != "postgresql-major-preflight")] | length' - \
+    < "$render_dir/attune-postgresql-cutover.yaml"
+})"
+if [[ "$cutover_deployment_contract" != $'7\t7' || "$cutover_non_preflight_job_count" -ne 0 ]]; then
+  printf 'PostgreSQL cutover did not stop every Attune Deployment and suppress dependent Jobs: %s, %s Jobs\n' "$cutover_deployment_contract" "$cutover_non_preflight_job_count" >&2
+  exit 1
+fi
+
+cutover_rabbitmq_guard="$({
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc 'select(.kind == "StatefulSet" and .spec.template.metadata.labels."app.kubernetes.io/component" == "rabbitmq") | .spec.template.spec.initContainers[] | select(.name == "guard-rabbitmq-major-upgrade") | .args[0]' - \
+    < "$render_dir/attune-postgresql-cutover.yaml"
+})"
+if [[ "$cutover_rabbitmq_guard" != *'"startFresh" != startFresh'* ]]; then
+  printf 'PostgreSQL cutover does not explicitly authorize the destructive RabbitMQ 4 reset\n' >&2
+  exit 1
+fi
+
+cutover_service_contract="$({
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc 'select(.kind == "Service" and (.metadata.name == "verify-attune-postgresql" or .metadata.name == "verify-attune-postgresql-maintenance")) | [.metadata.name, .spec.selector."attune.dev/postgresql-major"] | @tsv' - \
+    < "$render_dir/attune-postgresql-cutover.yaml"
+})"
+expected_cutover_service_contract=$'verify-attune-postgresql\tcutover-blocked\tverify-attune-postgresql-maintenance\t18'
+if [[ "$cutover_service_contract" != "$expected_cutover_service_contract" ]]; then
+  printf 'PostgreSQL cutover Service selectors are unsafe: %s\n' "$cutover_service_contract" >&2
+  exit 1
+fi
+
+postgresql_major_label="$({
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc 'select(.kind == "StatefulSet" and .metadata.name == "verify-attune-postgresql") | .spec.template.metadata.labels."attune.dev/postgresql-major"' - \
+    < "$render_dir/attune-postgresql-cutover.yaml"
+})"
+if [[ "$postgresql_major_label" != 18 ]]; then
+  printf 'PostgreSQL 18 StatefulSet Pod label is missing\n' >&2
+  exit 1
+fi
+
+cutover_preflight_contract="$({
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc 'select(.kind == "Job" and .metadata.labels."app.kubernetes.io/component" == "postgresql-major-preflight") | [.metadata.annotations."helm.sh/hook", .metadata.annotations."helm.sh/hook-weight", .spec.activeDeadlineSeconds, .spec.backoffLimit] | @tsv' - \
+    < "$render_dir/attune-postgresql-cutover.yaml"
+})"
+cutover_preflight_script="$({
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc 'select(.kind == "Job" and .metadata.labels."app.kubernetes.io/component" == "postgresql-major-preflight") | .spec.template.spec.containers[0].args[0]' - \
+    < "$render_dir/attune-postgresql-cutover.yaml"
+})"
+if [[ "$cutover_preflight_contract" != $'pre-upgrade\t-50\t180\t0' ]] || \
+   [[ "$cutover_preflight_script" != *"default_transaction_read_only=on"* ]] || \
+   [[ "$cutover_preflight_script" != *'ordinary_major="$(server_major "$ORDINARY_DB_HOST"'* ]] || \
+   [[ "$cutover_preflight_script" != *'"$ordinary_major" = 16'* ]] || \
+   [[ "$cutover_preflight_script" != *'"$maintenance_major" = 18'* ]]; then
+  printf 'PostgreSQL cutover preflight is not bounded, read-only, or retry-safe\n' >&2
+  exit 1
+fi
 
 restricted_pod_count="$({
   docker run --rm -i mikefarah/yq:4.47.2 \
@@ -570,55 +711,43 @@ if ! grep -q "$shared_bootstrap_marker" "$render_dir/attune-shared-volume.yaml";
   printf 'shared-volume bootstrap does not use a revision-specific completion marker\n' >&2
   exit 1
 fi
-if ! grep -Fq '.attune-bootstrap-r{{ .Release.Revision }}' "$root_dir/charts/attune/templates/jobs.yaml" || \
-   ! grep -Fq '.attune-bootstrap-r{{ .Release.Revision }}' "$root_dir/charts/attune/templates/applications.yaml"; then
+if ! grep -Fq '.attune-bootstrap-r{{ .Release.Revision }}' "$root_dir/charts/attune/templates/jobs.yaml"; then
   printf 'shared-volume bootstrap marker is not tied to the Helm release revision\n' >&2
   exit 1
 fi
 
-shared_api_wait="$({
+if grep -Eq 'name: wait-for-(packs|core-pack)' "$render_dir/attune-shared-volume.yaml"; then
+  printf 'shared-volume workloads still wait for content bootstrap\n' >&2
+  exit 1
+fi
+
+shared_platform_wait_count="$({
   docker run --rm -i mikefarah/yq:4.47.2 \
-    eval-all --no-doc 'select(.kind == "Deployment" and .spec.template.metadata.labels."app.kubernetes.io/component" == "api") | .spec.template.spec.initContainers[] | select(.name == "wait-for-packs") | .args[0]' - \
+    eval-all --no-doc '[select(.kind == "Deployment") | .spec.template.spec.initContainers[] | select(.name == "wait-for-api-platform" and (.args[0] | contains("/health/ready")) and (.args[0] | contains("timed out after 300s")))] | length' - \
     < "$render_dir/attune-shared-volume.yaml"
 })"
-if [[ "$shared_api_wait" != *"$shared_bootstrap_marker"* ]]; then
-  printf 'shared-volume API does not wait for the current bootstrap marker\n' >&2
+if [[ "$shared_platform_wait_count" -ne 3 ]]; then
+  printf 'executor and worker pools do not use the bounded platform-readiness wait\n' >&2
   exit 1
 fi
 
-if grep -q 'name: wait-for-packs' "$render_dir/attune-shared-volume.yaml" && \
-   [[ "$(grep -c 'name: wait-for-packs' "$render_dir/attune-shared-volume.yaml")" -ne 1 ]]; then
-  printf 'shared-volume consumers still use filesystem-only pack readiness\n' >&2
-  exit 1
-fi
-
-shared_core_wait_count="$({
+api_probe_contract="$({
   docker run --rm -i mikefarah/yq:4.47.2 \
-    eval-all --no-doc '[select(.kind == "Deployment") | .spec.template.spec.initContainers[] | select(.name == "wait-for-core-pack")] | length' - \
+    eval-all --no-doc 'select(.kind == "Deployment" and .spec.template.metadata.labels."app.kubernetes.io/component" == "api") | [.spec.template.spec.containers[0].readinessProbe.httpGet.path, .spec.template.spec.containers[0].livenessProbe.httpGet.path] | @tsv' - \
     < "$render_dir/attune-shared-volume.yaml"
 })"
-if [[ "$shared_core_wait_count" -ne 3 ]]; then
-  printf 'shared-volume consumers do not wait for pack readiness\n' >&2
+if [[ "$api_probe_contract" != $'/health/ready\t/health/live' ]]; then
+  printf 'API probes do not separate platform readiness and process liveness: %s\n' "$api_probe_contract" >&2
   exit 1
 fi
 
-shared_core_wait_marker_count="$({
+ordinary_api_selector_revision="$({
   docker run --rm -i mikefarah/yq:4.47.2 \
-    eval-all --no-doc '[select(.kind == "Deployment") | .spec.template.spec.initContainers[] | select(.name == "wait-for-core-pack" and (.args[0] | contains(".attune-bootstrap-r")))] | length' - \
-    < "$render_dir/attune-shared-volume.yaml"
+    eval-all --no-doc 'select(.kind == "Service" and .metadata.name == "verify-attune-api") | .spec.selector."attune.dev/release-revision" // "absent"' - \
+    < "$render_dir/attune-object.yaml"
 })"
-if [[ "$shared_core_wait_marker_count" -ne 3 ]]; then
-  printf 'shared-volume consumers do not wait for the current bootstrap marker\n' >&2
-  exit 1
-fi
-
-object_core_wait_secret_count="$({
-  docker run --rm -i mikefarah/yq:4.47.2 \
-    eval-all --no-doc '[select(.kind == "Deployment") | .spec.template.spec.initContainers[] | select(.name == "wait-for-core-pack" and .envFrom[0].secretRef.name == "verify-runtime")] | length' - \
-    < "$render_dir/attune-object-upgrade.yaml"
-})"
-if [[ "$object_core_wait_secret_count" -ne 3 ]]; then
-  printf 'object-mode API pack readiness checks do not receive runtime credentials\n' >&2
+if [[ "$ordinary_api_selector_revision" != absent ]]; then
+  printf 'ordinary internal API Service is pinned to one release revision\n' >&2
   exit 1
 fi
 
@@ -632,13 +761,23 @@ if [[ "$object_init_packs_hook" != post-upgrade ]]; then
   exit 1
 fi
 
+object_init_user_hook="$({
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc 'select(.kind == "Job" and .metadata.labels."app.kubernetes.io/component" == "init-user") | .metadata.annotations."helm.sh/hook"' - \
+    < "$render_dir/attune-object-upgrade.yaml"
+})"
+if [[ "$object_init_user_hook" != pre-upgrade ]]; then
+  printf 'object-mode init-user upgrade Job is not a pre-upgrade hook\n' >&2
+  exit 1
+fi
+
 object_init_packs_script="$({
   docker run --rm -i mikefarah/yq:4.47.2 \
     eval-all --no-doc 'select(.kind == "Job" and .metadata.labels."app.kubernetes.io/component" == "init-packs") | .spec.template.spec.containers[] | select(.name == "init-packs") | .args[0]' - \
     < "$render_dir/attune-object-upgrade.yaml"
 })"
-if [[ "$object_init_packs_script" != *'ATTUNE_API_URL'*/health* || "$object_init_packs_script" == *'/health/ready'* || "$object_init_packs_script" != *'waiting for api'* ]]; then
-  printf 'object-mode init-packs does not wait for basic API health before bootstrap\n' >&2
+if [[ "$object_init_packs_script" != *'ATTUNE_API_URL'*/health/ready* || "$object_init_packs_script" != *'waiting for api'* ]]; then
+  printf 'object-mode init-packs does not wait for platform API readiness before bootstrap\n' >&2
   exit 1
 fi
 
@@ -706,9 +845,40 @@ if [[ "$rabbitmq_cookie_init_count" -ne 1 ]]; then
   exit 1
 fi
 
-object_core_wait_count="$(grep -c 'name: wait-for-core-pack' "$render_dir/attune-object.yaml")"
-if [[ "$object_core_wait_count" -ne 3 ]]; then
-  printf 'object mode expected executor and both worker pools to wait for the core pack, found %s\n' "$object_core_wait_count" >&2
+major_upgrade_guard_count="$({
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc '[select(.kind == "StatefulSet") | .spec.template.spec.initContainers[] | select((.name == "guard-postgresql-major-upgrade" and (.args[0] | contains("startFresh+cutover stage"))) or (.name == "guard-rabbitmq-major-upgrade" and (.args[0] | contains("majorUpgradePolicy=startFresh"))))] | length' - \
+    < "$render_dir/attune-object.yaml"
+})"
+if [[ "$major_upgrade_guard_count" -ne 2 ]]; then
+  printf 'bundled infrastructure expected two major-version data guards, found %s\n' "$major_upgrade_guard_count" >&2
+  exit 1
+fi
+
+bundled_image_contract="$({
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc 'select(.kind == "StatefulSet" and (.metadata.name == "verify-attune-postgresql" or .metadata.name == "verify-attune-rabbitmq")) | [.metadata.name, .spec.template.spec.containers[0].image] | @tsv' - \
+    < "$render_dir/attune-object.yaml"
+})"
+expected_bundled_image_contract=$'verify-attune-postgresql\ttimescale/timescaledb:2.30.1-pg18@sha256:9dede0e3ccc071cf71935b17f76bf243331df0b1575338c8ac294640fcf12a36\tverify-attune-rabbitmq\trabbitmq:4.3.6-management-alpine@sha256:1aab4d911053f3ee4ff9bb231f5192ebd6a12281f8044910256a667fdb04108d'
+if [[ "$bundled_image_contract" != "$expected_bundled_image_contract" ]]; then
+  printf 'bundled infrastructure images are not pinned to the expected digests:\n%s\n' "$bundled_image_contract" >&2
+  exit 1
+fi
+
+rabbitmq_provisioning_ttl="$({
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc 'select(.kind == "Job" and .metadata.labels."app.kubernetes.io/component" == "provision-rabbitmq") | .spec.ttlSecondsAfterFinished // "absent"' - \
+    < "$render_dir/attune-cnpg.yaml"
+})"
+if [[ "$rabbitmq_provisioning_ttl" != absent ]]; then
+  printf 'RabbitMQ provisioning Job TTL can race Helm resource waiting\n' >&2
+  exit 1
+fi
+
+object_content_wait_count="$(grep -Ec 'name: wait-for-(core-pack|packs)' "$render_dir/attune-object.yaml" || true)"
+if [[ "$object_content_wait_count" -ne 0 ]]; then
+  printf 'object-mode workloads still wait for content readiness\n' >&2
   exit 1
 fi
 
@@ -817,9 +987,13 @@ if ! grep -q 'name: "verify-attune-provision-rabbitmq-' "$render_dir/attune-cnpg
   exit 1
 fi
 
-if ! grep -q 'image: docker.io/timescale/timescaledb-ha:pg16.15-ts2.29.2@sha256:903669a95321e439a181e2b350d6242a0af2e0ed2629196489780d1e58c46816' \
+if ! grep -q 'image: docker.io/timescale/timescaledb-ha:pg18.6-ts2.30.1@sha256:131bfdf82ec0dfe42eaa3f4a189f8e04b7b1dc2b27705cfd921e55ebef339840' \
   "$render_dir/setup/timescaledb.yaml"; then
   printf 'generated setup does not pin the expected TimescaleDB image\n' >&2
+  exit 1
+fi
+if [[ "$(grep -c 'major: 18' "$render_dir/setup/timescaledb.yaml")" -ne 2 ]]; then
+  printf 'generated setup does not declare PostgreSQL major version 18\n' >&2
   exit 1
 fi
 
@@ -1420,8 +1594,8 @@ pre_upgrade_hook_count="$({
     < "$render_dir/attune-upgrade.yaml"
 })"
 
-if [[ "$pre_upgrade_hook_count" -ne 4 ]]; then
-  printf 'expected four pre-upgrade Jobs, found %d\n' "$pre_upgrade_hook_count" >&2
+if [[ "$pre_upgrade_hook_count" -ne 5 ]]; then
+  printf 'expected five pre-upgrade Jobs, found %d\n' "$pre_upgrade_hook_count" >&2
   exit 1
 fi
 
@@ -1430,19 +1604,71 @@ pre_upgrade_hook_names="$({
     eval-all --no-doc '[select(.kind == "Job" and .metadata.annotations."helm.sh/hook" == "pre-upgrade") | .metadata.name] | sort | join(",")' - \
     < "$render_dir/attune-upgrade.yaml"
 })"
-expected_hook_names='verify-attune-init-packs,verify-attune-init-user,verify-attune-migrations,verify-attune-provision-postgresql'
+expected_hook_names='verify-attune-init-packs,verify-attune-init-user,verify-attune-migrations,verify-attune-postgresql-major-preflight,verify-attune-provision-postgresql'
 if [[ "$pre_upgrade_hook_names" != "$expected_hook_names" ]]; then
   printf 'pre-upgrade Jobs do not use stable retry-safe names: %s\n' "$pre_upgrade_hook_names" >&2
   exit 1
 fi
 
-bounded_pre_upgrade_hook_count="$({
+complete_preflight_script="$({
   docker run --rm -i mikefarah/yq:4.47.2 \
-    eval-all --no-doc '[select(.kind == "Job" and .metadata.annotations."helm.sh/hook" == "pre-upgrade" and .spec.activeDeadlineSeconds == 600)] | length' - \
+    eval-all --no-doc 'select(.kind == "Job" and .metadata.labels."app.kubernetes.io/component" == "postgresql-major-preflight") | .spec.template.spec.containers[0].args[0]' - \
     < "$render_dir/attune-upgrade.yaml"
 })"
-if [[ "$bounded_pre_upgrade_hook_count" -ne 4 ]]; then
-  printf 'expected every pre-upgrade Job to have a 600-second deadline\n' >&2
+if [[ "$complete_preflight_script" != *'server_major "$MAINTENANCE_DB_HOST"'* ]] || \
+   [[ "$complete_preflight_script" != *'PostgreSQL 18 is ready through the maintenance Service'* ]] || \
+   [[ "$complete_preflight_script" != *'ordinary_major="$(server_major "$ORDINARY_DB_HOST"'* ]] || \
+   [[ "$complete_preflight_script" != *'PostgreSQL 18 is ready through the existing ordinary Service'* ]] || \
+   [[ "$complete_preflight_script" != *'"$ordinary_major" = 16'* ]] || \
+   [[ "$complete_preflight_script" != *'refusing complete stage: the existing ordinary Service still reaches PostgreSQL 16'* ]] || \
+   [[ "$complete_preflight_script" != *'ordinary Service reached unsupported PostgreSQL major'* ]] || \
+   [[ "$complete_preflight_script" != *'default_transaction_read_only=on'* ]]; then
+  printf 'complete-stage preflight does not distinguish read-only maintenance and ordinary Service detection\n' >&2
+  exit 1
+fi
+
+mutation_host_override_count="$({
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc '[select(.kind == "Job" and (.metadata.labels."app.kubernetes.io/component" == "provision-postgresql" or .metadata.labels."app.kubernetes.io/component" == "migrations" or .metadata.labels."app.kubernetes.io/component" == "init-user" or .metadata.labels."app.kubernetes.io/component" == "init-packs")) | (.spec.template.spec.initContainers[]?.env[]?, .spec.template.spec.containers[]?.env[]?) | select(.name == "DB_HOST" and .value == "verify-attune-postgresql-maintenance")] | length' - \
+    < "$render_dir/attune-upgrade.yaml"
+})"
+if [[ "$mutation_host_override_count" -ne 5 ]]; then
+  printf 'bundled database mutation Jobs do not all use the maintenance Service, found %s overrides\n' "$mutation_host_override_count" >&2
+  exit 1
+fi
+bundled_database_url_suppression_count="$({
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc '[select(.kind == "Job" and (.metadata.labels."app.kubernetes.io/component" == "migrations" or .metadata.labels."app.kubernetes.io/component" == "init-user" or .metadata.labels."app.kubernetes.io/component" == "init-packs")) | .spec.template.spec.containers[] | .env[]? | select(.name == "ATTUNE__DATABASE__URL" and .value == "")] | length' - \
+    < "$render_dir/attune-upgrade.yaml"
+})"
+if [[ "$bundled_database_url_suppression_count" -ne 3 ]]; then
+  printf 'bundled mutation Jobs can bypass DB_HOST through ATTUNE__DATABASE__URL\n' >&2
+  exit 1
+fi
+if [[ "$(grep -c 'name: DB_HOST' "$root_dir/charts/attune/templates/jobs.yaml")" -lt 5 ]] || \
+   [[ "$(grep -c 'attune.databaseMutationHost' "$root_dir/charts/attune/templates/jobs.yaml")" -lt 5 ]] || \
+   [[ "$(grep -c 'name: ATTUNE__DATABASE__URL' "$root_dir/charts/attune/templates/jobs.yaml")" -lt 5 ]]; then
+  printf 'database-mutating storage Jobs are missing maintenance Service overrides\n' >&2
+  exit 1
+fi
+
+bounded_upgrade_bootstrap_count="$({
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc '[select(.kind == "Job" and (.metadata.labels."app.kubernetes.io/component" == "init-user" or .metadata.labels."app.kubernetes.io/component" == "init-packs") and .spec.activeDeadlineSeconds == 300)] | length' - \
+    < "$render_dir/attune-upgrade.yaml"
+})"
+if [[ "$bounded_upgrade_bootstrap_count" -ne 2 ]]; then
+  printf 'expected init-user and init-packs Jobs to have a 300-second deadline\n' >&2
+  exit 1
+fi
+
+init_user_upgrade_hook="$({
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc 'select(.kind == "Job" and .metadata.labels."app.kubernetes.io/component" == "init-user") | .metadata.annotations."helm.sh/hook" // ""' - \
+    < "$render_dir/attune-upgrade.yaml"
+})"
+if [[ "$init_user_upgrade_hook" != pre-upgrade ]]; then
+  printf 'shared-volume init-user upgrade Job is not a pre-upgrade hook\n' >&2
   exit 1
 fi
 
