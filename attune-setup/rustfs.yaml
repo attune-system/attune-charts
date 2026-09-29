@@ -1,0 +1,180 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: attune-rustfs
+  namespace: attune
+  labels:
+    app.kubernetes.io/name: rustfs
+    app.kubernetes.io/instance: attune-rustfs
+spec:
+  ports:
+    - name: s3
+      port: 9000
+      targetPort: s3
+  selector:
+    app.kubernetes.io/name: rustfs
+    app.kubernetes.io/instance: attune-rustfs
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: attune-rustfs
+  namespace: attune
+  labels:
+    app.kubernetes.io/name: rustfs
+    app.kubernetes.io/instance: attune-rustfs
+spec:
+  serviceName: attune-rustfs
+  replicas: 1
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Retain
+    whenScaled: Retain
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: rustfs
+      app.kubernetes.io/instance: attune-rustfs
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: rustfs
+        app.kubernetes.io/instance: attune-rustfs
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        fsGroup: 10001
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: rustfs
+          image: docker.io/rustfs/rustfs:1.0.0@sha256:8cc9801755448b71a786705ce76692c77e14936cccd87cf2fc31842e58f4d1ff
+          imagePullPolicy: IfNotPresent
+          args: ["/data"]
+          env:
+            - name: RUSTFS_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: attune-runtime
+                  key: AWS_ACCESS_KEY_ID
+            - name: RUSTFS_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: attune-runtime
+                  key: AWS_SECRET_ACCESS_KEY
+            - name: RUSTFS_ADDRESS
+              value: ":9000"
+            - name: RUSTFS_CONSOLE_ENABLE
+              value: "false"
+          ports:
+            - name: s3
+              containerPort: 9000
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: s3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: s3
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 1Gi
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: data
+              mountPath: /data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 100Gi
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: attune-rustfs-provision
+  namespace: attune
+  labels:
+    app.kubernetes.io/name: rustfs-provision
+    app.kubernetes.io/instance: attune-rustfs
+spec:
+  activeDeadlineSeconds: 180
+  backoffLimit: 4
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: rustfs-provision
+        app.kubernetes.io/instance: attune-rustfs
+    spec:
+      automountServiceAccountToken: false
+      restartPolicy: OnFailure
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: provision
+          image: docker.io/amazon/aws-cli:2.31.26@sha256:cf1851fa3162c35009b2dc6d2df2797e5b0e9723fe546f545c9fa34a3dc03477
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "-ec"]
+          args:
+            - |
+              endpoint=http://attune-rustfs:9000
+              aws_local() { aws --cli-connect-timeout 2 --cli-read-timeout 5 --endpoint-url "$endpoint" "$@"; }
+              attempt=0
+              until aws_local s3api list-buckets >/dev/null 2>&1; do
+                attempt=$((attempt + 1))
+                [ "$attempt" -lt 60 ] || { echo "RustFS did not become ready" >&2; exit 1; }
+                sleep 2
+              done
+              aws_local s3api head-bucket --bucket attune-production >/dev/null 2>&1 || \
+                aws_local s3api create-bucket --bucket attune-production >/dev/null
+              aws_local s3api put-bucket-versioning \
+                --bucket attune-production --versioning-configuration Status=Enabled
+              test "$(aws_local s3api get-bucket-versioning \
+                --bucket attune-production --query Status --output text)" = Enabled
+          env:
+            - name: HOME
+              value: /tmp
+            - name: AWS_DEFAULT_REGION
+              value: us-east-1
+            - name: AWS_PAGER
+              value: ""
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: attune-runtime
+                  key: AWS_ACCESS_KEY_ID
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: attune-runtime
+                  key: AWS_SECRET_ACCESS_KEY
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]

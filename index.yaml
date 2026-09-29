@@ -2,6 +2,20 @@ apiVersion: v1
 entries:
   attune:
   - apiVersion: v2
+    appVersion: 0.7.1
+    created: "2026-09-28T21:56:25.099202912-05:00"
+    description: Helm chart for deploying the Attune automation platform
+    digest: 16d6894384639ca5d7224f885cb7053409c22bdc11a85ca772c439e626c8d0af
+    home: https://github.com/attune-system/attune
+    icon: https://avatars.githubusercontent.com/u/284962476?s=200&v=4
+    name: attune
+    sources:
+    - https://github.com/attune-system/attune
+    type: application
+    urls:
+    - packages/attune-0.8.6.tgz
+    version: 0.8.6
+  - apiVersion: v2
     appVersion: 0.7.0
     created: "2026-09-23T10:55:06.574759229-05:00"
     description: Helm chart for deploying the Attune automation platform
@@ -373,4 +387,4 @@ entries:
     urls:
     - packages/attune-site-0.1.0.tgz
     version: 0.1.0
-generated: "2026-09-23T10:55:06.574759229-05:00"
+generated: "2026-09-28T21:56:25.099202912-05:00"

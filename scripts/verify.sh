@@ -17,7 +17,11 @@ setup_generator=(
   ATTUNE_SETUP_ENCRYPTION_KEY=encryption-key-with-at-least-32-characters
   "$root_dir/scripts/generate-attune-setup.sh"
 )
-helm_316=(docker run --rm -i -v "$root_dir:/work" -w /work alpine/helm:3.16.1)
+if [[ -n "${ATTUNE_HELM_316:-}" ]]; then
+  helm_316=("$ATTUNE_HELM_316")
+else
+  helm_316=(docker run --rm -i -v "$root_dir:/work" -w /work alpine/helm:3.16.1)
+fi
 
 "${setup_generator[@]}" \
     --namespace verify \
@@ -40,6 +44,8 @@ docker run --rm -i ghcr.io/yannh/kubeconform:v0.7.0 \
   -schema-location default \
   -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
   < "$render_dir/setup/timescaledb.yaml"
+docker run --rm -i ghcr.io/yannh/kubeconform:v0.7.0 \
+  -strict -summary < "$root_dir/attune-setup/rustfs.yaml"
 
 database_password="$({
   docker run --rm -i mikefarah/yq:4.47.2 \

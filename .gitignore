@@ -1,2 +1,3 @@
-/attune-setup/
+/attune-setup/*
+!/attune-setup/rustfs.yaml
 /.scratch/

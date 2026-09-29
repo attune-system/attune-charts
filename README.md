@@ -5,7 +5,7 @@ publishes charts for the Attune platform and its public sites.
 
 | Chart | Version | Purpose |
 | --- | --- | --- |
-| `attune` | `0.8.5` | Attune services, workers, PostgreSQL, and RabbitMQ |
+| `attune` | `0.8.6` | Attune services, workers, PostgreSQL, and RabbitMQ |
 | `attune-site` | `0.1.5` | `attunedev.org` and its inquiry form |
 | `attune-docs-site` | `0.1.3` | `docs.attunedev.org` |
 
@@ -230,10 +230,22 @@ helm upgrade --install attune attune/attune \
   --timeout 20m
 ```
 
-The platform chart pulls Attune `0.7.0` images from
+The platform chart pulls Attune `0.7.1` images from
 `ghcr.io/attune-system/attune`. Apply the generated namespace, Secret, and
 optional CloudNativePG manifests before installation. The chart does not accept
 credentials through Helm values.
+
+For a single-node RustFS object store, add `AWS_ACCESS_KEY_ID` and
+`AWS_SECRET_ACCESS_KEY` to the `attune-runtime` Secret, then apply
+`attune-setup/rustfs.yaml`. The manifest uses digest-pinned RustFS and AWS CLI
+images, creates the `attune-production` bucket, and enables bucket versioning.
+Set the chart to `storage.mode: object` with endpoint
+`http://attune-rustfs:9000`, bucket `attune-production`, and region
+`us-east-1`. The manifest assumes the default `attune` namespace and its PVC
+uses the cluster's default StorageClass. Edit those fields when your generated
+setup uses different values. This small-installation manifest uses the same
+credentials to bootstrap RustFS and access its bucket. Do not use it as a
+high-availability or production object-store topology.
 
 The site charts pull public, versioned images from `ghcr.io/attune-system`.
 
@@ -260,7 +272,7 @@ It pins the release version instead of using the mutable `latest` image tag.
 Run the same update locally with:
 
 ```bash
-./scripts/update-attune-release.py 0.7.0
+./scripts/update-attune-release.py 0.7.1
 ./scripts/package.sh
 ```
 
