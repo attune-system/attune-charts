@@ -751,22 +751,26 @@ automatic rollback to `sharedVolume`. Stop writes first, then use a tested
 reverse migration or restore the pre-cutover database and PVC backups as one
 consistent set.
 
-On an object-mode upgrade, the core pack bootstrap is a `post-upgrade` hook. It
-waits for `/health/ready` through a Service that selects only API Pods carrying the
-target Helm release revision, then publishes the bundled pack through the
-authenticated upload API. It uses a temporary integration identity rather than
-the initial administrator password. Old API Pods cannot satisfy this gate.
-The bootstrap then waits for transitional `/health/content`. This check covers
-active core and coarse action/sensor host availability until required-pack locks
-and candidate evidence replace it in issue #75.
+Fresh installs run core pack bootstrap as a blocking `post-install` hook. On an
+object-mode upgrade, bootstrap is an ordinary Job and a reconciliation failure
+keeps the previously active core release without failing Helm. Set
+`corePack.requiredOnUpgrade=true` only when a platform release cannot run with
+the previous core release; that restores the blocking upgrade hook. A
+shared-volume upgrade remains a blocking `pre-upgrade` hook because that path
+updates files before it loads their database definitions.
 
-Shared-volume upgrades keep the bootstrap as a `pre-upgrade` hook and may retain
-the revision marker for that Job. API, executor, action-worker, and sensor-worker
-Pods never wait for the marker or active core. They start from platform readiness
-through the ordinary internal API Service, so that Service remains routable while
-content health is false. API readiness uses `/health/ready`; liveness uses
-`/health/live`. Bootstrap Jobs and workload waits have a 300-second deadline.
-Per-service storage modes are rejected by the values schema.
+The chart pins the desired immutable release with `corePack.version` and the
+optional `corePack.digest`. Bootstrap reads the active release before writing and
+skips upload when it already matches. Object-mode bootstrap waits for
+`/health/ready` through a Service that selects only API Pods carrying the target
+Helm release revision. It uses a temporary integration identity rather than the
+initial administrator password. Old API Pods cannot satisfy this gate.
+
+API, executor, action-worker, and sensor-worker Pods start from platform
+readiness through the ordinary internal API Service, so that Service remains
+routable while content health is false. API readiness uses `/health/ready`;
+liveness uses `/health/live`. Bootstrap Jobs and workload waits have a
+300-second deadline. Per-service storage modes are rejected by the values schema.
 
 Run a disruption test against a dedicated three-node test release. The command
 hooks must generate pack, runtime, artifact, and log activity and verify mixed

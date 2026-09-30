@@ -15,6 +15,7 @@
     "serviceAccounts",
     "sharedStorage",
     "images",
+    "corePack",
     "jobs",
     "api",
     "executor",
@@ -402,6 +403,22 @@
         "initUser": { "$ref": "#/definitions/chartImage" },
         "initPacks": { "$ref": "#/definitions/chartImage" },
         "agent": { "$ref": "#/definitions/chartImage" }
+      }
+    },
+    "corePack": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "digest", "requiredOnUpgrade"],
+      "properties": {
+        "version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$"
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^(?:|[0-9a-f]{64})$"
+        },
+        "requiredOnUpgrade": { "type": "boolean" }
       }
     },
     "jobs": {

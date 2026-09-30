@@ -260,12 +260,17 @@ images:
     pullPolicy: IfNotPresent
   initPacks:
     repository: attune/init-packs
-    tag: ""
+    tag: "core-1.0.2"
     pullPolicy: IfNotPresent
   agent:
     repository: attune/agent
     tag: ""
     pullPolicy: IfNotPresent
+
+corePack:
+  version: "1.0.2"
+  digest: ""
+  requiredOnUpgrade: false
 
 jobs:
   migrations:

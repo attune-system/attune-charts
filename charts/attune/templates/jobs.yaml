@@ -111,13 +111,13 @@ spec:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ ternary (printf "%s-init-packs" (include "attune.fullname" .)) (printf "%s-init-packs-%d" (include "attune.fullname" .) .Release.Revision) .Release.IsUpgrade | trunc 63 | trimSuffix "-" | quote }}
+  name: {{ printf "%s-init-packs-%d" (include "attune.fullname" .) .Release.Revision | trunc 63 | trimSuffix "-" | quote }}
   labels:
     {{- include "attune.labels" . | nindent 4 }}
     app.kubernetes.io/component: init-packs
-  {{- if .Release.IsUpgrade }}
+  {{- if or (not .Release.IsUpgrade) .Values.corePack.requiredOnUpgrade (eq .Values.storage.mode "sharedVolume") }}
   annotations:
-    helm.sh/hook: {{ ternary "post-upgrade" "pre-upgrade" (eq .Values.storage.mode "object") }}
+    helm.sh/hook: {{ if .Release.IsUpgrade }}{{ ternary "post-upgrade" "pre-upgrade" (eq .Values.storage.mode "object") }}{{ else }}post-install{{ end }}
     helm.sh/hook-weight: "0"
     helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
   {{- end }}
@@ -156,6 +156,12 @@ spec:
               value: api
             - name: ATTUNE_API_URL
               value: {{ printf "http://%s:%v" (include "attune.revisionApiServiceName" .) .Values.api.service.port | quote }}
+            - name: ATTUNE_CORE_PACK_VERSION
+              value: {{ required "corePack.version is required" .Values.corePack.version | quote }}
+            {{- if .Values.corePack.digest }}
+            - name: ATTUNE_CORE_PACK_DIGEST
+              value: {{ .Values.corePack.digest | quote }}
+            {{- end }}
             {{- end }}
           {{- end }}
           command: ["/bin/sh", "-ec"]
@@ -210,7 +216,13 @@ spec:
                 echo "waiting for api";
                 sleep 2;
               done
+              {{- if and .Release.IsUpgrade (eq .Values.storage.mode "object") (not .Values.corePack.requiredOnUpgrade) }}
+              if ! /init-packs.sh; then
+                echo "core pack reconciliation failed; keeping the previously active release" >&2
+              fi
+              {{- else }}
               exec /init-packs.sh
+              {{- end }}
               {{- else }}
               until python3 - <<'PY'
               import os

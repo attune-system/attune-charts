@@ -236,6 +236,12 @@ helm template verify "$root_dir/charts/attune" \
 helm template verify "$root_dir/charts/attune" \
   --namespace verify \
   --is-upgrade \
+  --values "$root_dir/charts/attune/ci/object-values.yaml" \
+  --set corePack.requiredOnUpgrade=true \
+  > "$render_dir/attune-object-required-core-upgrade.yaml"
+helm template verify "$root_dir/charts/attune" \
+  --namespace verify \
+  --is-upgrade \
   --values "$root_dir/charts/attune/ci/shared-volume-values.yaml" \
   --set database.postgresql.majorUpgradePolicy=startFresh \
   --set database.postgresql.majorUpgradeStage=cutover \
@@ -759,11 +765,41 @@ fi
 
 object_init_packs_hook="$({
   docker run --rm -i mikefarah/yq:4.47.2 \
-    eval-all --no-doc 'select(.kind == "Job" and .metadata.labels."app.kubernetes.io/component" == "init-packs") | .metadata.annotations."helm.sh/hook"' - \
+    eval-all --no-doc 'select(.kind == "Job" and .metadata.labels."app.kubernetes.io/component" == "init-packs") | .metadata.annotations."helm.sh/hook" // ""' - \
     < "$render_dir/attune-object-upgrade.yaml"
 })"
-if [[ "$object_init_packs_hook" != post-upgrade ]]; then
-  printf 'object-mode init-packs upgrade Job is not a post-upgrade hook\n' >&2
+if [[ -n "$object_init_packs_hook" ]]; then
+  printf 'object-mode init-packs upgrade Job unexpectedly blocks the Helm release\n' >&2
+  exit 1
+fi
+
+required_object_init_packs_hook="$({
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc 'select(.kind == "Job" and .metadata.labels."app.kubernetes.io/component" == "init-packs") | .metadata.annotations."helm.sh/hook"' - \
+    < "$render_dir/attune-object-required-core-upgrade.yaml"
+})"
+if [[ "$required_object_init_packs_hook" != post-upgrade ]]; then
+  printf 'required object-mode core pack upgrade is not a post-upgrade hook\n' >&2
+  exit 1
+fi
+
+object_core_pack_version="$({
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc 'select(.kind == "Job" and .metadata.labels."app.kubernetes.io/component" == "init-packs") | .spec.template.spec.containers[] | select(.name == "init-packs") | .env[] | select(.name == "ATTUNE_CORE_PACK_VERSION") | .value' - \
+    < "$render_dir/attune-object-upgrade.yaml"
+})"
+if [[ "$object_core_pack_version" != 1.0.2 ]]; then
+  printf 'object-mode init-packs does not pin core pack 1.0.2: %s\n' "$object_core_pack_version" >&2
+  exit 1
+fi
+
+object_init_packs_image="$({
+  docker run --rm -i mikefarah/yq:4.47.2 \
+    eval-all --no-doc 'select(.kind == "Job" and .metadata.labels."app.kubernetes.io/component" == "init-packs") | .spec.template.spec.containers[] | select(.name == "init-packs") | .image' - \
+    < "$render_dir/attune-object-upgrade.yaml"
+})"
+if [[ "$object_init_packs_image" != 'ghcr.io/attune-system/attune/init-packs:core-1.0.2' ]]; then
+  printf 'object-mode init-packs image is not pinned to core 1.0.2: %s\n' "$object_init_packs_image" >&2
   exit 1
 fi
 
@@ -784,6 +820,10 @@ object_init_packs_script="$({
 })"
 if [[ "$object_init_packs_script" != *'ATTUNE_API_URL'*/health/ready* || "$object_init_packs_script" != *'waiting for api'* ]]; then
   printf 'object-mode init-packs does not wait for platform API readiness before bootstrap\n' >&2
+  exit 1
+fi
+if [[ "$object_init_packs_script" != *'keeping the previously active release'* ]]; then
+  printf 'optional object-mode core reconciliation is not non-fatal\n' >&2
   exit 1
 fi
 
