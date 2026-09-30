@@ -108,14 +108,15 @@ spec:
           resources:
             {{- toYaml .Values.jobs.initUser.resources | nindent 12 }}
 ---
+{{- $initPacksBlocking := or (not .Release.IsUpgrade) .Values.corePack.requiredOnUpgrade (eq .Values.storage.mode "sharedVolume") }}
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ printf "%s-init-packs-%d" (include "attune.fullname" .) .Release.Revision | trunc 63 | trimSuffix "-" | quote }}
+  name: {{ ternary (printf "%s-init-packs" (include "attune.fullname" .)) (printf "%s-init-packs-%d" (include "attune.fullname" .) .Release.Revision) $initPacksBlocking | trunc 63 | trimSuffix "-" | quote }}
   labels:
     {{- include "attune.labels" . | nindent 4 }}
     app.kubernetes.io/component: init-packs
-  {{- if or (not .Release.IsUpgrade) .Values.corePack.requiredOnUpgrade (eq .Values.storage.mode "sharedVolume") }}
+  {{- if $initPacksBlocking }}
   annotations:
     helm.sh/hook: {{ if .Release.IsUpgrade }}{{ ternary "post-upgrade" "pre-upgrade" (eq .Values.storage.mode "object") }}{{ else }}post-install{{ end }}
     helm.sh/hook-weight: "0"
