@@ -7,7 +7,20 @@ repository_url="packages"
 
 mkdir -p "$packages_dir"
 
-for chart in "$root_dir"/charts/*; do
+if [[ "$#" -eq 0 ]]; then
+  charts=("$root_dir"/charts/*)
+else
+  charts=()
+  for name in "$@"; do
+    if [[ ! "$name" =~ ^[a-z0-9-]+$ || ! -f "$root_dir/charts/$name/Chart.yaml" ]]; then
+      printf 'unknown chart: %s\n' "$name" >&2
+      exit 1
+    fi
+    charts+=("$root_dir/charts/$name")
+  done
+fi
+
+for chart in "${charts[@]}"; do
   helm package "$chart" --destination "$packages_dir"
 done
 

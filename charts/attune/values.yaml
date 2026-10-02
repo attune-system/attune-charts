@@ -4,7 +4,7 @@ fullnameOverride: ""
 global:
   imageRegistry: ghcr.io
   imageNamespace: attune-system
-  imageTag: "0.7.3"
+  imageTag: "0.7.4"
   imagePullSecrets: []
 
 # Secure workload defaults satisfy Kubernetes Pod Security Admission's
@@ -62,6 +62,13 @@ security:
     postLogoutRedirectUri: ""
     # Additional scopes beyond openid, email, and profile.
     scopes: []
+    # The groups scope also requires a verified groups claim at login.
+    requireGroups: false
+    deviceClient:
+      # Leave empty to reuse the web registration. Okta requires a Native app.
+      clientId: ""
+      # Public clients need no secret. Confidential clients use client_secret_basic.
+      # Store the secret in security.identitySecret, never in chart values.
   activeDirectory:
     # Attune connects to Active Directory through its LDAP interface.
     enabled: false

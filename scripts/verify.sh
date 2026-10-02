@@ -2,6 +2,7 @@
 set -euo pipefail
 
 root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+python3 "$root_dir/scripts/test-oidc-config.py"
 render_dir="$(mktemp -d)"
 repository_url="packages"
 attune_version="$(awk -F '"' '/^appVersion:/ { print $2; exit }' "$root_dir/charts/attune/Chart.yaml")"
@@ -1535,6 +1536,8 @@ helm template verify "$root_dir/charts/attune" \
   --set-string security.oidc.clientId=attune \
   --set-string security.oidc.redirectUri=https://attune.example.com/auth/callback \
   --set-json 'security.oidc.scopes=["groups"]' \
+  --set security.oidc.requireGroups=true \
+  --set-string security.oidc.deviceClient.clientId=attune-native \
   --set security.activeDirectory.enabled=true \
   --set-string security.activeDirectory.url=ldaps://ad.example.com:636 \
   --set-string 'security.activeDirectory.userSearchBase=ou=users\,dc=example\,dc=com' \
@@ -1550,6 +1553,9 @@ identity_config="$({
 for expected_setting in \
   'discovery_url: "https://login.example.com/.well-known/openid-configuration"' \
   'scopes: ["groups"]' \
+  'require_groups: true' \
+  'client_id: "attune-native"' \
+  'client_secret: null' \
   'url: "ldaps://ad.example.com:636"' \
   'user_filter: "(sAMAccountName={login})"'; do
   if [[ "$identity_config" != *"$expected_setting"* ]]; then

@@ -273,6 +273,8 @@ security:
     postLogoutRedirectUri: https://attune.example.com/login
     scopes:
       - groups
+    deviceClient:
+      clientId: attune-native
   identitySecret:
     existingSecret: attune-identity
 ```
@@ -301,9 +303,27 @@ STARTTLS. Keep `dangerSkipTlsVerify` disabled outside local testing.
 The API imports the Secret selected by `security.identitySecret.existingSecret`.
 It can contain
 `ATTUNE__SECURITY__OIDC__CLIENT_SECRET`,
-`ATTUNE__SECURITY__LDAP__SEARCH_BIND_PASSWORD`, or both. Omit the identity
+`ATTUNE__SECURITY__OIDC__DEVICE_CLIENT__CLIENT_SECRET`, and
+`ATTUNE__SECURITY__LDAP__SEARCH_BIND_PASSWORD`. Omit the identity
 Secret for public OIDC clients and Active Directory direct bind. The chart
 writes non-secret identity settings to the mounted ConfigMap.
+
+CLI SSO uses RFC 8628 device authorization. Enable the device grant at your
+provider. For Okta, create a public Native application with client authentication
+set to `none`, and set `security.oidc.deviceClient.clientId` to its client ID.
+Keep the existing web client ID and callback URI. Configure the native app's
+group claims to match the web app, with the same issuer and subject identifiers.
+
+Leave `deviceClient.clientId` empty to reuse the web registration. An explicit
+native client never inherits the web secret. The chart renders its secret as
+`null`; a confidential device client's API-only identity Secret can override it.
+Attune supports `none` and `client_secret_basic` client authentication.
+
+Requesting the `groups` scope requires a group claim in the ID token or
+subject-verified UserInfo response. Set `security.oidc.requireGroups: true` when
+your provider supplies groups without that scope. Missing or malformed required
+groups reject login before identity or role changes. A verified empty list clears
+OIDC-managed roles. The CLI and API must both run application version 0.7.4 or later.
 
 ## Choose data backends
 

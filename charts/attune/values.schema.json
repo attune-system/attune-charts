@@ -110,6 +110,14 @@
             "providerIconUrl": { "type": "string" },
             "redirectUri": { "type": "string" },
             "postLogoutRedirectUri": { "type": "string" },
+            "requireGroups": { "type": "boolean" },
+            "deviceClient": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "clientId": { "type": "string", "pattern": "^$|.*\\S.*" }
+              }
+            },
             "scopes": {
               "type": "array",
               "uniqueItems": true,
