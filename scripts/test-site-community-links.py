@@ -25,7 +25,8 @@ INVITES = [
 
 
 def command(*args):
-    return subprocess.check_output(args, text=True, stderr=subprocess.STDOUT).strip()
+    stderr = subprocess.STDOUT if args[:2] == ("docker", "logs") else subprocess.PIPE
+    return subprocess.check_output(args, text=True, stderr=stderr).strip()
 
 
 def check_chart(name):
