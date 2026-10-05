@@ -42,6 +42,8 @@ spec:
           securityContext:
             {{- toYaml .Values.containerSecurityContext | nindent 12 }}
           env:
+            - name: SLACK_INVITE_URL
+              value: {{ .Values.slackInviteUrl | quote }}
             - name: SITE_ORIGIN
               value: {{ .Values.siteOrigin | quote }}
             - name: TRUST_PROXY_HEADERS

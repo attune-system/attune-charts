@@ -6,8 +6,8 @@ publishes charts for the Attune platform and its public sites.
 | Chart | Version | Purpose |
 | --- | --- | --- |
 | `attune` | `0.8.10` | Attune services, workers, PostgreSQL, and RabbitMQ |
-| `attune-site` | `0.1.5` | `attunedev.org` and its inquiry form |
-| `attune-docs-site` | `0.1.3` | `docs.attunedev.org` |
+| `attune-site` | `0.1.6` | `attunedev.org` and its inquiry form |
+| `attune-docs-site` | `0.1.4` | `docs.attunedev.org` |
 
 ## Add the repository
 

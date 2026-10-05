@@ -2,12 +2,15 @@ replicaCount: 1
 
 image:
   repository: ghcr.io/attune-system/attune-docs-site
-  tag: 0.1.2
+  tag: 0.1.12
   pullPolicy: IfNotPresent
 imagePullSecrets: []
 
 nameOverride: ""
 fullnameOverride: ""
+
+# Empty uses the invite fallback packaged in the image.
+slackInviteUrl: ""
 
 service:
   type: ClusterIP

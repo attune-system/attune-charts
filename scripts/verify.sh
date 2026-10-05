@@ -4,6 +4,7 @@ set -euo pipefail
 root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 python3 "$root_dir/scripts/test-oidc-config.py"
 python3 "$root_dir/scripts/test-worker-environments.py"
+python3 "$root_dir/scripts/test-site-community-links.py"
 render_dir="$(mktemp -d)"
 repository_url="packages"
 attune_version="$(awk -F '"' '/^appVersion:/ { print $2; exit }' "$root_dir/charts/attune/Chart.yaml")"
