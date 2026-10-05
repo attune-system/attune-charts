@@ -74,9 +74,8 @@ spec:
                 echo "waiting for schema";
                 sleep 2;
               done
-          envFrom:
-            - secretRef:
-                name: {{ include "attune.secretName" $ | quote }}
+          env:
+            {{- include "attune.databaseCredentialEnvironment" $ | nindent 12 }}
         {{- include "attune.waitForApiPlatform" $ | nindent 8 }}
         {{- if and $.Values.rabbitmq.enabled $.Values.rabbitmq.provisioning.enabled }}
         {{- include "attune.waitForRabbitmqCredentials" $ | nindent 8 }}
@@ -89,10 +88,8 @@ spec:
           imagePullPolicy: {{ .imagePullPolicy | default "IfNotPresent" | quote }}
           {{- include "attune.containerSecurityContext" (dict "root" $ "identity" "worker" "override" (.containerSecurityContext | default dict)) | nindent 10 }}
           command: ["/opt/attune/agent/attune-agent"]
-          envFrom:
-            - secretRef:
-                name: {{ include "attune.secretName" $ | quote }}
           env:
+            {{- include "attune.secretEnvironment" (dict "root" $ "keys" (list "ATTUNE__DATABASE__URL" "ATTUNE__MESSAGE_QUEUE__URL" "ATTUNE__SECURITY__JWT_SECRET" "ATTUNE__SECURITY__ENCRYPTION_KEY")) | nindent 12 }}
             - name: ATTUNE_CONFIG
               value: /opt/attune/config.yaml
             - name: ATTUNE__DATABASE__SCHEMA
@@ -109,6 +106,10 @@ spec:
               value: {{ printf "http://%s:%v" (include "attune.apiServiceName" $) $.Values.api.service.port | quote }}
             - name: RUST_LOG
               value: {{ .logLevel | default "info" | quote }}
+            {{- if .passthroughEnv }}
+            - name: ATTUNE__WORKER__PASSTHROUGH_ENV
+              value: {{ join "," .passthroughEnv | quote }}
+            {{- end }}
             {{- if .runtimes }}
             - name: ATTUNE_WORKER_RUNTIMES
               value: {{ join "," .runtimes | quote }}
@@ -235,9 +236,8 @@ spec:
                 echo "waiting for schema";
                 sleep 2;
               done
-          envFrom:
-            - secretRef:
-                name: {{ include "attune.secretName" $ | quote }}
+          env:
+            {{- include "attune.databaseCredentialEnvironment" $ | nindent 12 }}
         {{- include "attune.waitForApiPlatform" $ | nindent 8 }}
         {{- if and $.Values.rabbitmq.enabled $.Values.rabbitmq.provisioning.enabled }}
         {{- include "attune.waitForRabbitmqCredentials" $ | nindent 8 }}
@@ -250,10 +250,8 @@ spec:
           imagePullPolicy: {{ .imagePullPolicy | default "IfNotPresent" | quote }}
           {{- include "attune.containerSecurityContext" (dict "root" $ "identity" "worker" "override" (.containerSecurityContext | default dict)) | nindent 10 }}
           command: ["/opt/attune/agent/attune-sensor-agent"]
-          envFrom:
-            - secretRef:
-                name: {{ include "attune.secretName" $ | quote }}
           env:
+            {{- include "attune.secretEnvironment" (dict "root" $ "keys" (list "ATTUNE__DATABASE__URL" "ATTUNE__MESSAGE_QUEUE__URL" "ATTUNE__SECURITY__JWT_SECRET")) | nindent 12 }}
             - name: ATTUNE_CONFIG
               value: /opt/attune/config.yaml
             - name: ATTUNE__DATABASE__SCHEMA
@@ -272,6 +270,10 @@ spec:
               value: /opt/attune/packs
             - name: RUST_LOG
               value: {{ .logLevel | default "info" | quote }}
+            {{- if .passthroughEnv }}
+            - name: ATTUNE__SENSOR__PASSTHROUGH_ENV
+              value: {{ join "," .passthroughEnv | quote }}
+            {{- end }}
             {{- if .runtimes }}
             - name: ATTUNE_SENSOR_RUNTIMES
               value: {{ join "," .runtimes | quote }}

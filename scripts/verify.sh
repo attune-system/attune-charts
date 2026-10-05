@@ -3,6 +3,7 @@ set -euo pipefail
 
 root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 python3 "$root_dir/scripts/test-oidc-config.py"
+python3 "$root_dir/scripts/test-worker-environments.py"
 render_dir="$(mktemp -d)"
 repository_url="packages"
 attune_version="$(awk -F '"' '/^appVersion:/ { print $2; exit }' "$root_dir/charts/attune/Chart.yaml")"
@@ -789,8 +790,8 @@ object_core_pack_version="$({
     eval-all --no-doc 'select(.kind == "Job" and .metadata.labels."app.kubernetes.io/component" == "init-packs") | .spec.template.spec.containers[] | select(.name == "init-packs") | .env[] | select(.name == "ATTUNE_CORE_PACK_VERSION") | .value' - \
     < "$render_dir/attune-object-upgrade.yaml"
 })"
-if [[ "$object_core_pack_version" != 1.0.2 ]]; then
-  printf 'object-mode init-packs does not pin core pack 1.0.2: %s\n' "$object_core_pack_version" >&2
+if [[ "$object_core_pack_version" != 1.0.3 ]]; then
+  printf 'object-mode init-packs does not pin core pack 1.0.3: %s\n' "$object_core_pack_version" >&2
   exit 1
 fi
 
@@ -799,8 +800,8 @@ object_init_packs_image="$({
     eval-all --no-doc 'select(.kind == "Job" and .metadata.labels."app.kubernetes.io/component" == "init-packs") | .spec.template.spec.containers[] | select(.name == "init-packs") | .image' - \
     < "$render_dir/attune-object-upgrade.yaml"
 })"
-if [[ "$object_init_packs_image" != 'ghcr.io/attune-system/attune/init-packs:core-1.0.2' ]]; then
-  printf 'object-mode init-packs image is not pinned to core 1.0.2: %s\n' "$object_init_packs_image" >&2
+if [[ "$object_init_packs_image" != 'ghcr.io/attune-system/attune/init-packs:core-1.0.3' ]]; then
+  printf 'object-mode init-packs image is not pinned to core 1.0.3: %s\n' "$object_init_packs_image" >&2
   exit 1
 fi
 

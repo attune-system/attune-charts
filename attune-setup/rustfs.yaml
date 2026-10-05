@@ -41,7 +41,7 @@ spec:
     spec:
       automountServiceAccountToken: false
       securityContext:
-        fsGroup: 10001
+        fsGroup: 1000
         fsGroupChangePolicy: OnRootMismatch
         seccompProfile:
           type: RuntimeDefault
@@ -87,8 +87,8 @@ spec:
               memory: 1Gi
           securityContext:
             runAsNonRoot: true
-            runAsUser: 10001
-            runAsGroup: 10001
+            runAsUser: 1000
+            runAsGroup: 1000
             allowPrivilegeEscalation: false
             capabilities:
               drop: ["ALL"]
@@ -123,6 +123,8 @@ spec:
         app.kubernetes.io/instance: attune-rustfs
     spec:
       automountServiceAccountToken: false
+      nodeSelector:
+        kubernetes.io/arch: amd64
       restartPolicy: OnFailure
       securityContext:
         seccompProfile:

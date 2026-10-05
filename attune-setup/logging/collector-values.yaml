@@ -1,0 +1,31 @@
+nameOverride: vlc
+
+remoteWrite:
+  - url: http://victoria-logs-vls-server:9428
+    maxDiskUsagePerURL: 1GB
+
+collector:
+  excludeFilter: '-kubernetes.pod_namespace:=attune'
+  msgField:
+    - message
+    - msg
+    - log
+    - body
+    - fields.message
+    - fields.summary
+  includePodLabels: true
+  includePodAnnotations: false
+  includeNodeLabels: false
+  includeNodeAnnotations: false
+  extraFields: '{"cluster":"rdrx"}'
+  streamFields:
+    - kubernetes.container_name
+    - kubernetes.pod_namespace
+
+resources:
+  requests:
+    cpu: 25m
+    memory: 64Mi
+  limits:
+    cpu: 250m
+    memory: 256Mi

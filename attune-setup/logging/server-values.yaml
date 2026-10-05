@@ -1,0 +1,19 @@
+nameOverride: vls
+
+server:
+  retentionPeriod: 14d
+  retentionDiskSpaceUsage: 16GB
+  persistentVolume:
+    storageClassName: longhorn
+    size: 20Gi
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "2"
+      memory: 4Gi
+  nodeSelector:
+    kubernetes.io/arch: amd64
+  ingress:
+    enabled: false

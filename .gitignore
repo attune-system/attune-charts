@@ -1,3 +1,6 @@
 /attune-setup/*
 !/attune-setup/rustfs.yaml
+!/attune-setup/logging/
+!/attune-setup/logging/*.yaml
+!/attune-setup/logging/README.md
 /.scratch/

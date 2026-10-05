@@ -251,6 +251,32 @@ securityContext:
       done
 {{- end -}}
 
+{{- define "attune.secretEnvironment" -}}
+{{- $root := .root -}}
+{{- $optional := .optional | default false -}}
+{{- range .keys }}
+- name: {{ . | quote }}
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "attune.secretName" $root | quote }}
+      key: {{ . | quote }}
+      {{- if $optional }}
+      optional: true
+      {{- end }}
+{{- end -}}
+{{- end -}}
+
+{{- define "attune.databaseCredentialEnvironment" -}}
+{{- if and .Values.database.postgresql.enabled (eq .Values.database.postgresql.majorUpgradeStage "complete") }}
+- name: DB_HOST
+  value: {{ include "attune.databaseMutationHost" . | quote }}
+{{- else }}
+{{ include "attune.secretEnvironment" (dict "root" . "keys" (list "DB_HOST")) }}
+{{- end }}
+{{ include "attune.secretEnvironment" (dict "root" . "keys" (list "DB_PORT" "DB_USER" "DB_PASSWORD" "DB_NAME" "DB_SCHEMA")) }}
+{{ include "attune.secretEnvironment" (dict "root" . "keys" (list "PGSSLMODE") "optional" true) }}
+{{- end -}}
+
 {{- define "attune.waitForDatabaseCredentials" -}}
 - name: wait-for-database-credentials
   image: postgres:18-alpine
@@ -262,14 +288,8 @@ securityContext:
         echo "waiting for provisioned PostgreSQL service account"
         sleep 2
       done
-  envFrom:
-    - secretRef:
-        name: {{ include "attune.secretName" . | quote }}
-  {{- if and .Values.database.postgresql.enabled (eq .Values.database.postgresql.majorUpgradeStage "complete") }}
   env:
-    - name: DB_HOST
-      value: {{ include "attune.databaseMutationHost" . | quote }}
-  {{- end }}
+    {{- include "attune.databaseCredentialEnvironment" . | nindent 4 }}
 {{- end -}}
 
 {{- define "attune.waitForRabbitmqCredentials" -}}
@@ -373,9 +393,7 @@ securityContext:
       value: {{ include "attune.rabbitmqServiceName" . | quote }}
     - name: RABBITMQ_PORT
       value: {{ .Values.rabbitmq.port | quote }}
-  envFrom:
-    - secretRef:
-        name: {{ include "attune.secretName" . | quote }}
+    {{- include "attune.secretEnvironment" (dict "root" . "keys" (list "RABBITMQ_USER" "RABBITMQ_PASSWORD")) | nindent 4 }}
 {{- end -}}
 
 {{- define "attune.waitForRabbitmqPort" -}}

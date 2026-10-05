@@ -4,7 +4,7 @@ fullnameOverride: ""
 global:
   imageRegistry: ghcr.io
   imageNamespace: attune-system
-  imageTag: "0.7.4"
+  imageTag: "0.7.5"
   imagePullSecrets: []
 
 # Secure workload defaults satisfy Kubernetes Pod Security Admission's
@@ -267,7 +267,7 @@ images:
     pullPolicy: IfNotPresent
   initPacks:
     repository: attune/init-packs
-    tag: "core-1.0.2"
+    tag: "core-1.0.3"
     pullPolicy: IfNotPresent
   agent:
     repository: attune/agent
@@ -275,7 +275,7 @@ images:
     pullPolicy: IfNotPresent
 
 corePack:
-  version: "1.0.2"
+  version: "1.0.3"
   digest: ""
   requiredOnUpgrade: false
 
@@ -395,6 +395,7 @@ web:
 #   tolerations      (optional) - Tolerations list for pod scheduling
 #   stopGracePeriod  (optional) - Termination grace period in seconds (default: 45)
 #   maxDatabaseConnections (optional) - Database pool budget per worker Pod (default: 5)
+#   passthroughEnv   (optional) - Exact service environment names exposed to pack processes
 #
 # Default action workers mirror the Docker Compose agent deployment model.
 actionWorkers:
@@ -403,6 +404,7 @@ actionWorkers:
     replicas: 1
     maxDatabaseConnections: 5
     runtimes: [shell, python, node, native]
+    passthroughEnv: []
     podSecurityContext: {}
     containerSecurityContext: {}
     resources: {}
@@ -414,6 +416,7 @@ sensorWorkers:
     replicas: 1
     maxDatabaseConnections: 5
     runtimes: [shell, python, node, native]
+    passthroughEnv: []
     logLevel: debug
     # The default notifier endpoint is plaintext inside the cluster network.
     allowInsecureNotifierWs: true

@@ -11,6 +11,15 @@ This chart installs the Attune platform, including these components:
 The chart defaults target a small single-node k3s cluster. All platform
 Deployments use one replica, and shared claims use `ReadWriteOnce`.
 
+Chart `0.8.10` targets Attune `0.7.5` and the independently pinned core pack
+`1.0.3`. API, executor, notifier, supervisor, web, and injected agent images
+inherit the platform tag unless explicitly overridden.
+
+This release includes per-pool environment passthrough and narrowed worker
+Secret imports. Keep API and agent images aligned for active-owner permission
+delegation and recorded-origin secret disclosure. Pack bootstrap uses the
+core-specific image tag and expected manifest version together.
+
 The bundled services use digest-pinned TimescaleDB `2.30.1-pg18` and RabbitMQ
 `4.3.6-management-alpine` images. Value overrides can replace either pin.
 PostgreSQL 16 data requires a logical backup and restore into PostgreSQL 18.
@@ -522,6 +531,37 @@ Set `security.existingSecret` to the runtime Secret name. The chart never copies
 these values into the Helm release. When the bundled PostgreSQL or RabbitMQ
 instance uses a different administrator account, set its `admin.existingSecret`
 and key names separately.
+
+Worker pools use individual Secret references. Action workers receive the
+database URL, broker URL, JWT signing secret, and encryption key. Sensor workers
+receive the first three. Their schema and broker readiness containers select
+only the keys those checks require.
+
+Pack-controlled child processes start with a cleared environment and a minimal
+base selection. Each action or sensor pool can opt in to additional service
+environment names through `passthroughEnv`, which defaults to an empty list:
+
+```yaml
+actionWorkers:
+  - name: python
+    image: python:3.12-slim
+    runtimes: [python, shell]
+    passthroughEnv: [HTTPS_PROXY, SSL_CERT_FILE]
+    env:
+      - name: HTTPS_PROXY
+        value: http://proxy.example.internal:3128
+      - name: SSL_CERT_FILE
+        value: /etc/ssl/certs/ca-certificates.crt
+```
+
+`env` supplies values to the service. `passthroughEnv` selects values exposed to
+actions, sensors, and dependency installers. Names must be exact, unique variable
+names. The reserved `ATTUNE_` namespace cannot pass through. Runtime context and
+scoped API tokens come from the service's execution or sensor context instead.
+Sensors emit events through the scoped HTTP API, without child broker credentials.
+
+Run `python3 scripts/test-worker-environments.py` to verify worker Secret selection
+and passthrough rendering. The script requires Helm and PyYAML.
 
 When MCP is enabled with `mcp.auth.useBootstrapTestUser: false`, set
 `mcp.auth.existingSecret` to a Secret containing the keys selected by
