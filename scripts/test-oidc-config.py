@@ -19,7 +19,7 @@ def read_yaml(content: str, expression: str, all_documents: bool = False):
             "docker", "run", "--rm", "-i", "mikefarah/yq:4.47.2",
             "eval-all" if all_documents else "eval", "--no-doc", "-o=json", expression, "-",
         ],
-        input=content, check=True, capture_output=True, text=True,
+        input=content, check=True, stdout=subprocess.PIPE, text=True,
     )
     return json.loads(result.stdout)
 
