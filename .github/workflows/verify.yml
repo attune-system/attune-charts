@@ -23,4 +23,11 @@ jobs:
       - uses: azure/setup-helm@v4
         with:
           version: ${{ matrix.helm-version }}
+      - name: Preload verification tools from Docker Hub mirror
+        run: |
+          set -euo pipefail
+          docker pull mirror.gcr.io/mikefarah/yq:4.47.2@sha256:76def1f56f456ecc1c3173ea275218ee17139bc2018c5a07887b15afd88ec03e
+          docker tag mirror.gcr.io/mikefarah/yq:4.47.2@sha256:76def1f56f456ecc1c3173ea275218ee17139bc2018c5a07887b15afd88ec03e mikefarah/yq:4.47.2
+          docker pull mirror.gcr.io/alpine/helm:3.16.1@sha256:e057182827e6273fc7e64b8b2b8809cbb71d84e0dd0f88310712f45879854062
+          docker tag mirror.gcr.io/alpine/helm:3.16.1@sha256:e057182827e6273fc7e64b8b2b8809cbb71d84e0dd0f88310712f45879854062 alpine/helm:3.16.1
       - run: ./scripts/verify.sh
