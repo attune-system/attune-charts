@@ -4,26 +4,39 @@ This chart installs the Attune platform, including these components:
 
 - API, executor, notifier, supervisor, and web Deployments
 - Action-worker and sensor-worker pools
-- Optional bundled TimescaleDB and RabbitMQ StatefulSets
+- Optional bundled PostgreSQL and RabbitMQ StatefulSets
 - Migration, bootstrap-user, and pack-initialization Jobs
 - Shared claims or RWX-free object storage for packs, runtime environments, and artifacts
 
 The chart defaults target a small single-node k3s cluster. All platform
 Deployments use one replica, and shared claims use `ReadWriteOnce`.
 
-Chart `0.8.10` targets Attune `0.7.5` and the independently pinned core pack
+Chart `0.9.0` targets Attune `0.8.0` and the independently pinned core pack
 `1.0.3`. API, executor, notifier, supervisor, web, and injected agent images
 inherit the platform tag unless explicitly overridden.
 
-This release includes per-pool environment passthrough and narrowed worker
-Secret imports. Keep API and agent images aligned for active-owner permission
-delegation and recorded-origin secret disclosure. Pack bootstrap uses the
-core-specific image tag and expected manifest version together.
+This minor chart release removes TimescaleDB. Attune uses native PostgreSQL
+partitions and cache maintenance. Keep API and agent images aligned. Pack
+bootstrap still uses core pack `1.0.3` and its matching image tag.
 
-The bundled services use digest-pinned TimescaleDB `2.30.1-pg18` and RabbitMQ
+The bundled services use digest-pinned PostgreSQL `18.6-alpine` and RabbitMQ
 `4.3.6-management-alpine` images. Value overrides can replace either pin.
 PostgreSQL 16 data requires a logical backup and restore into PostgreSQL 18.
 The chart does not run `pg_upgrade` or copy database files.
+
+### TimescaleDB upgrade boundary
+
+This release supports fresh native PostgreSQL installations, not conversion
+of populated TimescaleDB installations. A read-only `pre-upgrade` Job rejects
+the TimescaleDB extension on bundled, CloudNativePG, and external databases.
+It runs before database provisioning, migrations, and workload changes.
+Failed connections and PostgreSQL versions older than 16 also stop the upgrade.
+
+Do not use `--no-hooks`, drop the extension to bypass this check, or reuse a
+TimescaleDB data PVC with the stock image. Preserve existing databases and
+backups until a separate conversion procedure has been designed and tested.
+Generate new CNPG manifests in a new output directory. The generator refuses
+directories containing `timescaledb.yaml`, even with `--force`.
 
 The only valid PostgreSQL major-upgrade value pairs are `refuse+complete` and
 `startFresh+cutover`. Fresh installs use `refuse+complete` and do not render the
@@ -31,8 +44,9 @@ major preflight hook. Keep `refuse+complete` for later PostgreSQL 18 upgrades.
 
 ### Upgrade bundled PostgreSQL 16 to 18
 
-This procedure applies only to the PostgreSQL StatefulSet bundled with this
-chart. It requires downtime for both stages and the restore between them.
+This procedure applies only to a native PostgreSQL StatefulSet bundled with
+this chart. It does not convert a pre-0.8.0 Attune TimescaleDB schema. It requires
+downtime for both stages and the restore between them.
 
 Before the cutover:
 
@@ -44,7 +58,7 @@ Before the cutover:
   object ownership, and test the complete restore procedure on PostgreSQL 18.
 - Take a storage snapshot or equivalent backup of the PostgreSQL PVC.
 - Verify the administrator Secret mappings and access to the runtime Secret.
-- Confirm that the cluster can pull the pinned TimescaleDB image and has enough
+- Confirm that the cluster can pull the pinned PostgreSQL image and has enough
   free PVC capacity for a second database directory.
 - Finish any `sharedVolume` to `object` storage cutover first. The chart rejects
   both cutovers in one Helm upgrade.
@@ -369,7 +383,7 @@ changing replicas, worker pools, rollout strategy, or pool budgets.
 | Bundled | `rabbitmq.enabled: true` and `rabbitmq.provisioning.enabled: true` | A RabbitMQ administrator Secret |
 | External | `rabbitmq.enabled: false` and an external `rabbitmq.host` | A provisioned user with access to the selected vhost |
 
-Attune requires PostgreSQL 16 or later with TimescaleDB 2.17 or later. RabbitMQ
+Attune requires PostgreSQL 16 or later. TimescaleDB is not required. RabbitMQ
 must be version 3.12 or later.
 
 The repository includes `scripts/generate-attune-setup.sh`. Clone the chart
@@ -377,18 +391,18 @@ repository before running it. The script generates `values.yaml`, Kubernetes
 Secrets, and an optional CloudNativePG manifest:
 
 ```bash
-# CloudNativePG TimescaleDB and bundled RabbitMQ
+# CloudNativePG PostgreSQL and bundled RabbitMQ
 ./scripts/generate-attune-setup.sh
 
-# Standalone TimescaleDB/PostgreSQL and bundled RabbitMQ
+# Standalone PostgreSQL and bundled RabbitMQ
 ./scripts/generate-attune-setup.sh --database-mode bundled
 ```
 
 CloudNativePG mode uses three instances by default. It pins
-`timescale/timescaledb-ha:pg18.6-ts2.30.1` through an `ImageCatalog`, loads
-TimescaleDB, and creates the `timescaledb`, `pgcrypto`, and `uuid-ossp`
+`ghcr.io/cloudnative-pg/postgresql:18.6-standard-trixie` through an `ImageCatalog`
+and creates the `pgcrypto` and `uuid-ossp`
 extensions. Install the CloudNativePG operator before applying the generated
-`timescaledb.yaml`.
+`postgresql.yaml`. The image's PostgreSQL identity is UID `26`, GID `102`.
 
 CloudNativePG `v1.30.1` is the recommended operator version for the generated
 resources. The repository does not install the operator. It also does not
@@ -869,7 +883,7 @@ Set both `database.postgresql.provisioning.enabled` and
 `rabbitmq.provisioning.enabled` to `false` for external services. The chart does
 not create users, schemas, extensions, or vhosts in external systems. The
 database user must own the selected database and have an owner-writable schema.
-Install `timescaledb`, `pgcrypto`, and `uuid-ossp` before installing Attune. The
+Install `pgcrypto` and `uuid-ossp` before installing Attune. The
 RabbitMQ user needs configure, write, and read access to its vhost. External
 services must meet the minimum versions listed under
 [Choose data backends](#choose-data-backends).

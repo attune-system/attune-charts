@@ -4,6 +4,7 @@ set -euo pipefail
 root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 python3 "$root_dir/scripts/test-oidc-config.py"
 python3 "$root_dir/scripts/test-worker-environments.py"
+python3 "$root_dir/scripts/test-native-postgresql.py"
 python3 "$root_dir/scripts/test-site-community-links.py"
 render_dir="$(mktemp -d)"
 repository_url="packages"
@@ -29,7 +30,7 @@ fi
 "${setup_generator[@]}" \
     --namespace verify \
     --release verify \
-    --cluster-name verify-timescaledb \
+    --cluster-name verify-postgresql \
     --storage-class verify-storage \
     --shared-storage-rwx-class verify-rwx-storage \
     --ingress-host attune.example.com \
@@ -46,13 +47,13 @@ docker run --rm -i ghcr.io/yannh/kubeconform:v0.7.0 \
   -strict -summary \
   -schema-location default \
   -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
-  < "$render_dir/setup/timescaledb.yaml"
+   < "$render_dir/setup/postgresql.yaml"
 docker run --rm -i ghcr.io/yannh/kubeconform:v0.7.0 \
   -strict -summary < "$root_dir/attune-setup/rustfs.yaml"
 
 database_password="$({
   docker run --rm -i mikefarah/yq:4.47.2 \
-    eval-all --no-doc 'select(.metadata.name == "verify-timescaledb-bootstrap") | .data.password | @base64d' - \
+    eval-all --no-doc 'select(.metadata.name == "verify-postgresql-bootstrap") | .data.password | @base64d' - \
     < "$render_dir/setup/secrets.yaml"
 })"
 runtime_database_password="$({
@@ -343,7 +344,7 @@ cutover_deployment_contract="$({
 })"
 cutover_non_preflight_job_count="$({
   docker run --rm -i mikefarah/yq:4.47.2 \
-    eval-all --no-doc '[select(.kind == "Job" and .metadata.labels."app.kubernetes.io/component" != "postgresql-major-preflight")] | length' - \
+    eval-all --no-doc '[select(.kind == "Job" and .metadata.labels."app.kubernetes.io/component" != "postgresql-major-preflight" and .metadata.labels."app.kubernetes.io/component" != "database-preflight")] | length' - \
     < "$render_dir/attune-postgresql-cutover.yaml"
 })"
 if [[ "$cutover_deployment_contract" != $'7\t7' || "$cutover_non_preflight_job_count" -ne 0 ]]; then
@@ -909,7 +910,7 @@ bundled_image_contract="$({
     eval-all --no-doc 'select(.kind == "StatefulSet" and (.metadata.name == "verify-attune-postgresql" or .metadata.name == "verify-attune-rabbitmq")) | [.metadata.name, .spec.template.spec.containers[0].image] | @tsv' - \
     < "$render_dir/attune-object.yaml"
 })"
-expected_bundled_image_contract=$'verify-attune-postgresql\ttimescale/timescaledb:2.30.1-pg18@sha256:9dede0e3ccc071cf71935b17f76bf243331df0b1575338c8ac294640fcf12a36\tverify-attune-rabbitmq\trabbitmq:4.3.6-management-alpine@sha256:1aab4d911053f3ee4ff9bb231f5192ebd6a12281f8044910256a667fdb04108d'
+expected_bundled_image_contract=$'verify-attune-postgresql\tpostgres:18.6-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873\tverify-attune-rabbitmq\trabbitmq:4.3.6-management-alpine@sha256:1aab4d911053f3ee4ff9bb231f5192ebd6a12281f8044910256a667fdb04108d'
 if [[ "$bundled_image_contract" != "$expected_bundled_image_contract" ]]; then
   printf 'bundled infrastructure images are not pinned to the expected digests:\n%s\n' "$bundled_image_contract" >&2
   exit 1
@@ -1036,12 +1037,12 @@ if ! grep -q 'name: "verify-attune-provision-rabbitmq-' "$render_dir/attune-cnpg
   exit 1
 fi
 
-if ! grep -q 'image: docker.io/timescale/timescaledb-ha:pg18.6-ts2.30.1@sha256:131bfdf82ec0dfe42eaa3f4a189f8e04b7b1dc2b27705cfd921e55ebef339840' \
-  "$render_dir/setup/timescaledb.yaml"; then
-  printf 'generated setup does not pin the expected TimescaleDB image\n' >&2
+if ! grep -q 'image: ghcr.io/cloudnative-pg/postgresql:18.6-standard-trixie@sha256:79be0d10e78b7ac4520cf6c5db199a8bb7f6de53b3229f47e90cab5865528a0d' \
+   "$render_dir/setup/postgresql.yaml"; then
+  printf 'generated setup does not pin the expected PostgreSQL image\n' >&2
   exit 1
 fi
-if [[ "$(grep -c 'major: 18' "$render_dir/setup/timescaledb.yaml")" -ne 2 ]]; then
+if [[ "$(grep -c 'major: 18' "$render_dir/setup/postgresql.yaml")" -ne 2 ]]; then
   printf 'generated setup does not declare PostgreSQL major version 18\n' >&2
   exit 1
 fi
@@ -1054,7 +1055,7 @@ cp -a "$render_dir/setup" "$render_dir/setup-bundled"
     --output-dir "$render_dir/setup-bundled" \
     --force >/dev/null
 
-if [[ -e "$render_dir/setup-bundled/timescaledb.yaml" ]]; then
+if [[ -e "$render_dir/setup-bundled/postgresql.yaml" ]]; then
   printf 'bundled mode retained a stale CNPG manifest\n' >&2
   exit 1
 fi
@@ -1648,8 +1649,8 @@ pre_upgrade_hook_count="$({
     < "$render_dir/attune-upgrade.yaml"
 })"
 
-if [[ "$pre_upgrade_hook_count" -ne 5 ]]; then
-  printf 'expected five pre-upgrade Jobs, found %d\n' "$pre_upgrade_hook_count" >&2
+if [[ "$pre_upgrade_hook_count" -ne 6 ]]; then
+  printf 'expected six pre-upgrade Jobs, found %d\n' "$pre_upgrade_hook_count" >&2
   exit 1
 fi
 
@@ -1658,7 +1659,7 @@ pre_upgrade_hook_names="$({
     eval-all --no-doc '[select(.kind == "Job" and .metadata.annotations."helm.sh/hook" == "pre-upgrade") | .metadata.name] | sort | join(",")' - \
     < "$render_dir/attune-upgrade.yaml"
 })"
-expected_hook_names='verify-attune-init-packs,verify-attune-init-user,verify-attune-migrations,verify-attune-postgresql-major-preflight,verify-attune-provision-postgresql'
+expected_hook_names='verify-attune-database-preflight,verify-attune-init-packs,verify-attune-init-user,verify-attune-migrations,verify-attune-postgresql-major-preflight,verify-attune-provision-postgresql'
 if [[ "$pre_upgrade_hook_names" != "$expected_hook_names" ]]; then
   printf 'pre-upgrade Jobs do not use stable retry-safe names: %s\n' "$pre_upgrade_hook_names" >&2
   exit 1

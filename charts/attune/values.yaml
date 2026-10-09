@@ -4,7 +4,7 @@ fullnameOverride: ""
 global:
   imageRegistry: ghcr.io
   imageNamespace: attune-system
-  imageTag: "0.7.5"
+  imageTag: "0.8.0"
   imagePullSecrets: []
 
 # Secure workload defaults satisfy Kubernetes Pod Security Admission's
@@ -114,8 +114,8 @@ database:
       enabled: false
       activeDeadlineSeconds: 600
     image:
-      repository: timescale/timescaledb
-      tag: 2.30.1-pg18@sha256:9dede0e3ccc071cf71935b17f76bf243331df0b1575338c8ac294640fcf12a36
+      repository: postgres
+      tag: 18.6-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
     persistence:
       accessModes:
         - ReadWriteOnce

@@ -5,7 +5,7 @@ publishes charts for the Attune platform and its public sites.
 
 | Chart | Version | Purpose |
 | --- | --- | --- |
-| `attune` | `0.8.10` | Attune services, workers, PostgreSQL, and RabbitMQ |
+| `attune` | `0.9.0` | Attune services, workers, PostgreSQL, and RabbitMQ |
 | `attune-site` | `0.1.6` | `attunedev.org` and its inquiry form |
 | `attune-docs-site` | `0.1.4` | `docs.attunedev.org` |
 
@@ -58,11 +58,21 @@ CloudNativePG with bundled RabbitMQ is the default:
 ```
 
 This mode creates `attune-setup/namespace.yaml`, `secrets.yaml`,
-`timescaledb.yaml`, and `values.yaml`. It uses
-`timescale/timescaledb-ha:pg18.6-ts2.30.1` through a CloudNativePG
+`postgresql.yaml`, and `values.yaml`. It uses
+`ghcr.io/cloudnative-pg/postgresql:18.6-standard-trixie` through a CloudNativePG
 `ImageCatalog`, pinned to its multi-architecture digest. Run the printed
 commands in order. Install the CloudNativePG operator before applying the
-generated `timescaledb.yaml`.
+generated `postgresql.yaml`.
+
+Chart `0.9.0` targets Attune `0.8.0` and removes the TimescaleDB dependency.
+Use it for fresh native PostgreSQL installations. Upgrades refuse a database
+with the TimescaleDB extension before provisioning, migrations, or StatefulSet
+changes. Converting populated TimescaleDB installations is not supported.
+Do not bypass this check with `--no-hooks`, remove the extension to bypass it,
+or reuse an old TimescaleDB PVC with the stock PostgreSQL image.
+The setup generator also refuses an output directory containing the old
+`timescaledb.yaml`; choose a new directory instead. It does not replace a
+running database or convert existing data.
 
 CloudNativePG `v1.30.1` is the recommended operator version for these generated
 resources. The setup script does not install the CloudNativePG operator. It
@@ -105,7 +115,7 @@ Apply the printed commands again. The generator refuses to enable ingress
 without the password-change confirmation and an existing TLS Secret name.
 
 For a lighter installation without the CloudNativePG operator, use the chart's
-standalone TimescaleDB/PostgreSQL container:
+standalone PostgreSQL container:
 
 ```bash
 ./scripts/generate-attune-setup.sh --database-mode bundled
@@ -113,9 +123,10 @@ standalone TimescaleDB/PostgreSQL container:
 
 Bundled mode creates separate administrator and application credentials,
 enables the chart's account provisioner, and does not create
-`timescaledb.yaml`.
+`postgresql.yaml`.
 
-Bundled PostgreSQL 16 upgrades require a two-stage Helm cutover with downtime.
+Bundled native PostgreSQL 16 upgrades require a two-stage Helm cutover with downtime.
+This procedure does not convert Attune's pre-0.8.0 TimescaleDB schema.
 Back up the database and PostgreSQL PVC, test a logical restore on PostgreSQL
 18, and finish any shared-volume to object-storage migration first. The first
 stage also starts a fresh RabbitMQ 4 store, so drain the broker and accept that
@@ -156,7 +167,7 @@ stopping writes and restoring the PostgreSQL 16 database and PVC backup. The
 chart does not perform the logical restore or guarantee rollback from the old
 data directory. See the chart README for prerequisites and checks.
 
-For independently managed TimescaleDB and RabbitMQ, provide their existing
+For independently managed PostgreSQL and RabbitMQ, provide their existing
 service passwords through the environment:
 
 ```bash
@@ -174,13 +185,12 @@ ATTUNE_SETUP_RABBITMQ_PASSWORD='replace-with-rabbitmq-password' \
 ```
 
 The external database user must own the selected database and have an
-owner-writable schema. Install the `timescaledb`, `pgcrypto`, and `uuid-ossp`
+owner-writable schema. Install the `pgcrypto` and `uuid-ossp`
 extensions before installing Attune. The external RabbitMQ user needs
 configure, write, and read access to the selected vhost. The generator disables both
 bundled StatefulSets and their account-provisioning Jobs in this mode.
 
-External services must run PostgreSQL 16 or later, TimescaleDB 2.17 or later,
-and RabbitMQ 3.12 or later.
+External services must run PostgreSQL 16 or later and RabbitMQ 3.12 or later.
 
 External PostgreSQL defaults to `sslmode=require`. External RabbitMQ defaults
 to AMQPS on port `5671`. Pass `--database-sslmode`, `--rabbitmq-scheme`, and
@@ -230,7 +240,7 @@ helm upgrade --install attune attune/attune \
   --timeout 20m
 ```
 
-The platform chart pulls Attune `0.7.5` images from
+The platform chart pulls Attune `0.8.0` images from
 `ghcr.io/attune-system/attune`. Apply the generated namespace, Secret, and
 optional CloudNativePG manifests before installation. The chart does not accept
 credentials through Helm values.

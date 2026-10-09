@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-readonly TIMESCALE_IMAGE="docker.io/timescale/timescaledb-ha:pg18.6-ts2.30.1@sha256:131bfdf82ec0dfe42eaa3f4a189f8e04b7b1dc2b27705cfd921e55ebef339840"
+readonly POSTGRES_IMAGE="ghcr.io/cloudnative-pg/postgresql:18.6-standard-trixie@sha256:79be0d10e78b7ac4520cf6c5db199a8bb7f6de53b3229f47e90cab5865528a0d"
 
 namespace="attune"
 release="attune"
 database_mode="cnpg"
-cluster_name="attune-timescaledb"
+cluster_name="attune-postgresql"
 instances="3"
 database_size="20Gi"
 database_host=""
@@ -51,7 +51,7 @@ Options:
   --namespace NAME       Kubernetes namespace (default: attune)
   --release NAME         Helm release name (default: attune)
   --database-mode MODE   cnpg, bundled, or external (default: cnpg)
-  --cluster-name NAME    CloudNativePG Cluster name (default: attune-timescaledb)
+  --cluster-name NAME    CloudNativePG Cluster name (default: attune-postgresql)
   --instances COUNT      PostgreSQL instances (default: 3)
   --database-size SIZE   Storage per PostgreSQL instance (default: 20Gi)
   --database-host HOST   Required for external database mode
@@ -552,7 +552,10 @@ ingress_enabled=false
 
 umask 077
 mkdir -p "$output_dir"
-output_files=(.gitignore credentials.state namespace.yaml secrets.yaml timescaledb.yaml values.yaml)
+output_files=(.gitignore credentials.state namespace.yaml secrets.yaml postgresql.yaml values.yaml)
+if [[ -e "$output_dir/timescaledb.yaml" ]]; then
+  die "$output_dir/timescaledb.yaml belongs to an older TimescaleDB setup; use a new output directory for native PostgreSQL"
+fi
 for output_file in "${output_files[@]}"; do
   if [[ -e "$output_dir/$output_file" && "$force" != true ]]; then
     die "$output_dir/$output_file already exists; use --force to replace generated files"
@@ -671,7 +674,7 @@ EOF
 fi
 
 if [[ "$database_mode" == cnpg ]]; then
-  cat > "$output_dir/timescaledb.yaml" <<EOF
+  cat > "$output_dir/postgresql.yaml" <<EOF
 apiVersion: postgresql.cnpg.io/v1
 kind: ImageCatalog
 metadata:
@@ -680,7 +683,7 @@ metadata:
 spec:
   images:
     - major: 18
-      image: ${TIMESCALE_IMAGE}
+      image: ${POSTGRES_IMAGE}
 ---
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
@@ -695,8 +698,8 @@ spec:
     name: "${image_catalog}"
     major: 18
   imagePullPolicy: IfNotPresent
-  postgresUID: 1000
-  postgresGID: 1000
+  postgresUID: 26
+  postgresGID: 102
   bootstrap:
     initdb:
       database: "${database_name}"
@@ -707,16 +710,12 @@ spec:
       postInitApplicationSQL:
         - CREATE EXTENSION IF NOT EXISTS "uuid-ossp" SCHEMA public;
         - CREATE EXTENSION IF NOT EXISTS pgcrypto SCHEMA public;
-        - CREATE EXTENSION IF NOT EXISTS timescaledb;
         - CREATE SCHEMA IF NOT EXISTS "${database_schema}" AUTHORIZATION "${database_user}";
-  postgresql:
-    shared_preload_libraries:
-      - timescaledb
   storage:
     size: "${database_size}"
 EOF
   if [[ -n "$storage_class" ]]; then
-    printf '    storageClass: "%s"\n' "$storage_class" >> "$output_dir/timescaledb.yaml"
+    printf '    storageClass: "%s"\n' "$storage_class" >> "$output_dir/postgresql.yaml"
   fi
 fi
 
@@ -809,7 +808,7 @@ printf 'Apply in this order:\n'
 printf '  kubectl apply -f %q\n' "$output_dir/namespace.yaml"
 printf '  kubectl apply -f %q\n' "$output_dir/secrets.yaml"
 if [[ "$database_mode" == cnpg ]]; then
-  printf '  kubectl apply -f %q\n' "$output_dir/timescaledb.yaml"
+  printf '  kubectl apply -f %q\n' "$output_dir/postgresql.yaml"
   printf '  kubectl wait --namespace %s --for=condition=Ready cluster/%s --timeout=10m\n' "$namespace" "$cluster_name"
 fi
 printf '  helm upgrade --install %s attune/attune --namespace %s --values %q --wait --wait-for-jobs\n' \
@@ -822,7 +821,7 @@ fi
 if [[ "$database_mode" == cnpg ]]; then
   printf 'The CloudNativePG operator must already be installed.\n'
 elif [[ "$database_mode" == external ]]; then
-  printf 'The external database must already contain TimescaleDB, pgcrypto, uuid-ossp, and an owner-writable %s schema.\n' "$database_schema"
+  printf 'The external database must already contain pgcrypto, uuid-ossp, and an owner-writable %s schema.\n' "$database_schema"
 fi
 if [[ "$rabbitmq_mode" == external ]]; then
   printf 'The external RabbitMQ user must already have configure, write, and read access to vhost %s.\n' "$rabbitmq_vhost"
