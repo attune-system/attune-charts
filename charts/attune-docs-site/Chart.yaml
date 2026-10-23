@@ -2,8 +2,8 @@ apiVersion: v2
 name: attune-docs-site
 description: Public documentation site for Attune
 type: application
-version: 0.1.4
-appVersion: "0.1.12"
+version: 0.1.5
+appVersion: "0.1.14"
 home: https://docs.attunedev.org
 sources:
   - https://github.com/attune-system/attune-docs-site
