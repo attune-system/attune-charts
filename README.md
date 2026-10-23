@@ -7,7 +7,7 @@ publishes charts for the Attune platform and its public sites.
 | --- | --- | --- |
 | `attune` | `0.9.0` | Attune services, workers, PostgreSQL, and RabbitMQ |
 | `attune-site` | `0.1.6` | `attunedev.org` and its inquiry form |
-| `attune-docs-site` | `0.1.4` | `docs.attunedev.org` |
+| `attune-docs-site` | `0.1.5` | `docs.attunedev.org` |
 
 ## Add the repository
 
