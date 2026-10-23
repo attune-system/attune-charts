@@ -2,8 +2,8 @@ apiVersion: v2
 name: attune-site
 description: Public website for Attune
 type: application
-version: 0.1.6
-appVersion: "0.1.5"
+version: 0.1.7
+appVersion: "0.1.6"
 home: https://attunedev.org
 sources:
   - https://github.com/attune-system/attune-site
