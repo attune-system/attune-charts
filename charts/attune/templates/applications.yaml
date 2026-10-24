@@ -12,7 +12,6 @@ spec:
     - name: http
       port: {{ .Values.api.service.port }}
       targetPort: http
-{{- if eq .Values.storage.mode "object" }}
 ---
 apiVersion: v1
 kind: Service
@@ -30,7 +29,6 @@ spec:
     - name: http
       port: {{ .Values.api.service.port }}
       targetPort: http
-{{- end }}
 ---
 apiVersion: apps/v1
 kind: Deployment

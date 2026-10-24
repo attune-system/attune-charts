@@ -86,6 +86,9 @@ Secret overrides:
   ATTUNE_SETUP_RABBITMQ_PASSWORD, ATTUNE_SETUP_RABBITMQ_ADMIN_PASSWORD,
   ATTUNE_SETUP_JWT_SECRET, or ATTUNE_SETUP_ENCRYPTION_KEY. Missing values are
   generated with OpenSSL. External services require their service password.
+  ATTUNE_SETUP_BOOTSTRAP_TOKEN supplies an existing registrar-authorized token.
+  It is written only to a separate deployment Secret, never generated or saved
+  in credentials.state. Without it, follow the staged bootstrap instructions.
 
 Regeneration:
   The generator stores credentials in an ignored credentials.state file.
@@ -511,6 +514,7 @@ done
   die "ATTUNE_SETUP_RABBITMQ_ADMIN_PASSWORD must be at least 16 characters"
 
 runtime_secret="${release}-runtime"
+deployment_secret="${release}-deployment"
 database_admin_secret="${release}-postgresql-admin"
 rabbitmq_admin_secret="${release}-rabbitmq-admin"
 database_bootstrap_secret="${cluster_name}-bootstrap"
@@ -627,8 +631,21 @@ data:
   TARGET_PACKS_DIR: "$(base64_value "/opt/attune/packs")"
   RUNTIME_ENVS_DIR: "$(base64_value "/opt/attune/runtime_envs")"
   ARTIFACTS_DIR: "$(base64_value "/opt/attune/artifacts")"
-  LOADER_SCRIPT: "$(base64_value "/scripts/load_core_pack.py")"
 EOF
+
+if [[ -n "${ATTUNE_SETUP_BOOTSTRAP_TOKEN:-}" ]]; then
+  cat >> "$output_dir/secrets.yaml" <<EOF
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: "${deployment_secret}"
+  namespace: "${namespace}"
+type: Opaque
+data:
+  ATTUNE_BOOTSTRAP_TOKEN: "$(base64_value "$ATTUNE_SETUP_BOOTSTRAP_TOKEN")"
+EOF
+fi
 
 if [[ "$database_mode" == cnpg ]]; then
   cat >> "$output_dir/secrets.yaml" <<EOF
@@ -723,6 +740,9 @@ cat > "$output_dir/values.yaml" <<EOF
 security:
   existingSecret: "${runtime_secret}"
 
+corePack:
+  deploymentTokenSecret: "${deployment_secret}"
+
 database:
   host: "${database_host}"
   port: ${database_port}
@@ -804,6 +824,10 @@ fi
 chmod 600 "$output_dir/secrets.yaml"
 
 printf 'Generated Attune setup in %s\n\n' "$output_dir"
+if [[ -z "${ATTUNE_SETUP_BOOTSTRAP_TOKEN:-}" ]]; then
+  printf 'Bootstrap credential required: provision Secret %s with key ATTUNE_BOOTSTRAP_TOKEN before publication.\n' "$deployment_secret"
+  printf 'For a fresh database, follow the staged first-install procedure in charts/attune/README.md.\n\n'
+fi
 printf 'Apply in this order:\n'
 printf '  kubectl apply -f %q\n' "$output_dir/namespace.yaml"
 printf '  kubectl apply -f %q\n' "$output_dir/secrets.yaml"

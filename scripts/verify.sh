@@ -2,10 +2,13 @@
 set -euo pipefail
 
 root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+python3 "$root_dir/scripts/test-update-attune-release.py"
 python3 "$root_dir/scripts/test-oidc-config.py"
 python3 "$root_dir/scripts/test-worker-environments.py"
 python3 "$root_dir/scripts/test-native-postgresql.py"
 python3 "$root_dir/scripts/test-site-community-links.py"
+python3 "$root_dir/scripts/test-bootstrap-admission.py"
+python3 "$root_dir/scripts/test-acceptance-image-pins.py"
 render_dir="$(mktemp -d)"
 repository_url="packages"
 attune_version="$(awk -F '"' '/^appVersion:/ { print $2; exit }' "$root_dir/charts/attune/Chart.yaml")"
@@ -103,7 +106,7 @@ fi
 
 notifier_port="$({
   docker run --rm -i mikefarah/yq:4.47.2 \
-    eval-all --no-doc 'select(.kind == "ConfigMap") | .data."config.yaml" | from_yaml | .notifier.port' - \
+    eval-all --no-doc 'select(.kind == "ConfigMap" and .data."config.yaml" != null) | .data."config.yaml" | from_yaml | .notifier.port' - \
     < "$render_dir/attune-cnpg.yaml"
 })"
 if [[ "$notifier_port" != 8081 ]]; then
@@ -156,7 +159,7 @@ fi
 
 nginx_config="$({
   docker run --rm -i mikefarah/yq:4.47.2 \
-    eval-all --no-doc 'select(.kind == "ConfigMap") | .data."nginx.conf"' - \
+    eval-all --no-doc 'select(.kind == "ConfigMap" and .data."nginx.conf" != null) | .data."nginx.conf"' - \
     < "$render_dir/attune-cnpg.yaml"
 })"
 for directive in 'proxy_buffering off;' 'proxy_request_buffering off;' 'proxy_read_timeout 1h;' 'proxy_send_timeout 1h;'; do
@@ -650,8 +653,8 @@ shared_local_security_count="$({
     eval-all --no-doc '[select(.kind == "Deployment" or .kind == "Job") | select(.spec.template.metadata.labels."app.kubernetes.io/component" == "api" or .spec.template.metadata.labels."app.kubernetes.io/component" == "executor" or .spec.template.metadata.labels."app.kubernetes.io/component" == "supervisor" or .spec.template.metadata.labels."app.kubernetes.io/component" == "init-packs") | select(.spec.template.spec.securityContext.fsGroup != null)] | length' - \
     < "$render_dir/attune-shared-volume.yaml"
 })"
-if [[ "$shared_local_security_count" -ne 0 ]]; then
-  printf 'object-local volume group ownership escaped to shared-volume consumers\n' >&2
+if [[ "$shared_local_security_count" -ne 1 ]]; then
+  printf 'expected private bootstrap staging alone to get local-volume group ownership in shared mode\n' >&2
   exit 1
 fi
 
@@ -696,7 +699,7 @@ fi
 
 rendered_log_limits="$({
   docker run --rm -i mikefarah/yq:4.47.2 \
-    eval-all --no-doc 'select(.kind == "ConfigMap") | .data."config.yaml" | from_yaml | [.artifacts.log_segment_max_bytes, .artifacts.flush_interval_ms] | @tsv' - \
+    eval-all --no-doc 'select(.kind == "ConfigMap" and .data."config.yaml" != null) | .data."config.yaml" | from_yaml | [.artifacts.log_segment_max_bytes, .artifacts.flush_interval_ms] | @tsv' - \
     < "$render_dir/attune-object.yaml"
 })"
 if [[ "$rendered_log_limits" != $'65536\t500' ]]; then
@@ -710,7 +713,7 @@ custom_log_limits="$({
     --set artifacts.logSegmentMaxBytes=12345 \
     --set artifacts.flushIntervalMs=678 | \
   docker run --rm -i mikefarah/yq:4.47.2 \
-    eval-all --no-doc 'select(.kind == "ConfigMap") | .data."config.yaml" | from_yaml | [.artifacts.log_segment_max_bytes, .artifacts.flush_interval_ms] | @tsv' -
+    eval-all --no-doc 'select(.kind == "ConfigMap" and .data."config.yaml" != null) | .data."config.yaml" | from_yaml | [.artifacts.log_segment_max_bytes, .artifacts.flush_interval_ms] | @tsv' -
 })"
 if [[ "$custom_log_limits" != $'12345\t678' ]]; then
   printf 'operator runtime-log values did not reach application config: %s\n' "$custom_log_limits" >&2
@@ -722,13 +725,8 @@ if grep -q 'name: wait-for-packs' "$render_dir/attune-object.yaml"; then
   exit 1
 fi
 
-shared_bootstrap_marker='.attune-bootstrap-r1'
-if ! grep -q "$shared_bootstrap_marker" "$render_dir/attune-shared-volume.yaml"; then
-  printf 'shared-volume bootstrap does not use a revision-specific completion marker\n' >&2
-  exit 1
-fi
-if ! grep -Fq '.attune-bootstrap-r{{ .Release.Revision }}' "$root_dir/charts/attune/templates/jobs.yaml"; then
-  printf 'shared-volume bootstrap marker is not tied to the Helm release revision\n' >&2
+if grep -q '.attune-bootstrap-r' "$render_dir/attune-shared-volume.yaml"; then
+  printf 'shared-volume bootstrap retained an unauthenticated filesystem completion marker\n' >&2
   exit 1
 fi
 
@@ -792,8 +790,8 @@ object_core_pack_version="$({
     eval-all --no-doc 'select(.kind == "Job" and .metadata.labels."app.kubernetes.io/component" == "init-packs") | .spec.template.spec.containers[] | select(.name == "init-packs") | .env[] | select(.name == "ATTUNE_CORE_PACK_VERSION") | .value' - \
     < "$render_dir/attune-object-upgrade.yaml"
 })"
-if [[ "$object_core_pack_version" != 1.0.3 ]]; then
-  printf 'object-mode init-packs does not pin core pack 1.0.3: %s\n' "$object_core_pack_version" >&2
+if [[ "$object_core_pack_version" != 1.0.4 ]]; then
+  printf 'object-mode init-packs does not pin core pack 1.0.4: %s\n' "$object_core_pack_version" >&2
   exit 1
 fi
 
@@ -802,8 +800,8 @@ object_init_packs_image="$({
     eval-all --no-doc 'select(.kind == "Job" and .metadata.labels."app.kubernetes.io/component" == "init-packs") | .spec.template.spec.containers[] | select(.name == "init-packs") | .image' - \
     < "$render_dir/attune-object-upgrade.yaml"
 })"
-if [[ "$object_init_packs_image" != 'ghcr.io/attune-system/attune/init-packs:core-1.0.3' ]]; then
-  printf 'object-mode init-packs image is not pinned to core 1.0.3: %s\n' "$object_init_packs_image" >&2
+if [[ "$object_init_packs_image" != 'ghcr.io/attune-system/attune/init-packs:core-1.0.4' ]]; then
+  printf 'object-mode init-packs image is not pinned to core 1.0.4: %s\n' "$object_init_packs_image" >&2
   exit 1
 fi
 
@@ -819,15 +817,15 @@ fi
 
 object_init_packs_script="$({
   docker run --rm -i mikefarah/yq:4.47.2 \
-    eval-all --no-doc 'select(.kind == "Job" and .metadata.labels."app.kubernetes.io/component" == "init-packs") | .spec.template.spec.containers[] | select(.name == "init-packs") | .args[0]' - \
+    eval-all --no-doc 'select(.kind == "ConfigMap" and (.data."bootstrap-admission.py" != null)) | .data."bootstrap-admission.py"' - \
     < "$render_dir/attune-object-upgrade.yaml"
 })"
-if [[ "$object_init_packs_script" != *'ATTUNE_API_URL'*/health/ready* || "$object_init_packs_script" != *'waiting for api'* ]]; then
+if [[ "$object_init_packs_script" != *'pack_publication'* || "$object_init_packs_script" != *'authenticated-pack-publication-1'* || "$object_init_packs_script" != *'registrar'* || "$object_init_packs_script" != *'/health/ready'* || "$object_init_packs_script" != *'/health/bootstrap'* ]]; then
   printf 'object-mode init-packs does not wait for platform API readiness before bootstrap\n' >&2
   exit 1
 fi
-if [[ "$object_init_packs_script" != *'keeping the previously active release'* ]]; then
-  printf 'optional object-mode core reconciliation is not non-fatal\n' >&2
+if [[ "$object_init_packs_script" != *'publish_core'* || "$object_init_packs_script" == *'if ! /init-packs.sh'* ]]; then
+  printf 'core reconciliation does not use the API-only non-content-waiting publisher\n' >&2
   exit 1
 fi
 
@@ -867,7 +865,8 @@ if ! grep -q 'migrateFromSharedVolume: false' "$root_dir/charts/attune/values.ya
 fi
 for storage_cutover_contract in \
   'command: \["/usr/local/bin/attune-service"\]' \
-  'args: \["--upgrade-pack-releases"\]' \
+  'BEGIN READ ONLY;' \
+  'no release was frozen or activated' \
   'args: \["migrate-storage"\]' \
   'helm.sh/hook-weight: "-8"' \
   'helm.sh/hook-weight: "-7"' \
@@ -880,8 +879,12 @@ for storage_cutover_contract in \
 done
 
 storage_cutover_command_count="$(grep -c 'command: \["/usr/local/bin/attune-service"\]' "$root_dir/charts/attune/templates/jobs.yaml")"
-if [[ "$storage_cutover_command_count" -ne 2 ]]; then
-  printf 'storage cutover expected two runtime service commands, found %s\n' "$storage_cutover_command_count" >&2
+if [[ "$storage_cutover_command_count" -ne 1 ]]; then
+  printf 'storage cutover expected only the storage migration service command, found %s\n' "$storage_cutover_command_count" >&2
+  exit 1
+fi
+if grep -q -- '--upgrade-pack-releases' "$root_dir/charts/attune/templates/jobs.yaml"; then
+  printf 'storage cutover must not invoke the legacy release freezer\n' >&2
   exit 1
 fi
 
@@ -1549,7 +1552,7 @@ helm template verify "$root_dir/charts/attune" \
 
 identity_config="$({
   docker run --rm -i mikefarah/yq:4.47.2 \
-    eval-all --no-doc 'select(.kind == "ConfigMap") | .data."config.yaml"' - \
+    eval-all --no-doc 'select(.kind == "ConfigMap" and .data."config.yaml" != null) | .data."config.yaml"' - \
     < "$render_dir/attune-identity.yaml"
 })"
 
@@ -1649,8 +1652,8 @@ pre_upgrade_hook_count="$({
     < "$render_dir/attune-upgrade.yaml"
 })"
 
-if [[ "$pre_upgrade_hook_count" -ne 6 ]]; then
-  printf 'expected six pre-upgrade Jobs, found %d\n' "$pre_upgrade_hook_count" >&2
+if [[ "$pre_upgrade_hook_count" -ne 5 ]]; then
+  printf 'expected five pre-upgrade Jobs, found %d\n' "$pre_upgrade_hook_count" >&2
   exit 1
 fi
 
@@ -1659,7 +1662,7 @@ pre_upgrade_hook_names="$({
     eval-all --no-doc '[select(.kind == "Job" and .metadata.annotations."helm.sh/hook" == "pre-upgrade") | .metadata.name] | sort | join(",")' - \
     < "$render_dir/attune-upgrade.yaml"
 })"
-expected_hook_names='verify-attune-database-preflight,verify-attune-init-packs,verify-attune-init-user,verify-attune-migrations,verify-attune-postgresql-major-preflight,verify-attune-provision-postgresql'
+expected_hook_names='verify-attune-database-preflight,verify-attune-init-user,verify-attune-migrations,verify-attune-postgresql-major-preflight,verify-attune-provision-postgresql'
 if [[ "$pre_upgrade_hook_names" != "$expected_hook_names" ]]; then
   printf 'pre-upgrade Jobs do not use stable retry-safe names: %s\n' "$pre_upgrade_hook_names" >&2
   exit 1
@@ -1684,25 +1687,25 @@ fi
 
 mutation_host_override_count="$({
   docker run --rm -i mikefarah/yq:4.47.2 \
-    eval-all --no-doc '[select(.kind == "Job" and (.metadata.labels."app.kubernetes.io/component" == "provision-postgresql" or .metadata.labels."app.kubernetes.io/component" == "migrations" or .metadata.labels."app.kubernetes.io/component" == "init-user" or .metadata.labels."app.kubernetes.io/component" == "init-packs")) | (.spec.template.spec.initContainers[]?.env[]?, .spec.template.spec.containers[]?.env[]?) | select(.name == "DB_HOST" and .value == "verify-attune-postgresql-maintenance")] | length' - \
+    eval-all --no-doc '[select(.kind == "Job" and (.metadata.labels."app.kubernetes.io/component" == "provision-postgresql" or .metadata.labels."app.kubernetes.io/component" == "migrations" or .metadata.labels."app.kubernetes.io/component" == "init-user")) | (.spec.template.spec.initContainers[]?.env[]?, .spec.template.spec.containers[]?.env[]?) | select(.name == "DB_HOST" and .value == "verify-attune-postgresql-maintenance")] | length' - \
     < "$render_dir/attune-upgrade.yaml"
 })"
-if [[ "$mutation_host_override_count" -ne 5 ]]; then
+if [[ "$mutation_host_override_count" -ne 4 ]]; then
   printf 'bundled database mutation Jobs do not all use the maintenance Service, found %s overrides\n' "$mutation_host_override_count" >&2
   exit 1
 fi
 bundled_database_url_suppression_count="$({
   docker run --rm -i mikefarah/yq:4.47.2 \
-    eval-all --no-doc '[select(.kind == "Job" and (.metadata.labels."app.kubernetes.io/component" == "migrations" or .metadata.labels."app.kubernetes.io/component" == "init-user" or .metadata.labels."app.kubernetes.io/component" == "init-packs")) | .spec.template.spec.containers[] | .env[]? | select(.name == "ATTUNE__DATABASE__URL" and .value == "")] | length' - \
+    eval-all --no-doc '[select(.kind == "Job" and (.metadata.labels."app.kubernetes.io/component" == "migrations" or .metadata.labels."app.kubernetes.io/component" == "init-user")) | .spec.template.spec.containers[] | .env[]? | select(.name == "ATTUNE__DATABASE__URL" and .value == "")] | length' - \
     < "$render_dir/attune-upgrade.yaml"
 })"
-if [[ "$bundled_database_url_suppression_count" -ne 3 ]]; then
+if [[ "$bundled_database_url_suppression_count" -ne 2 ]]; then
   printf 'bundled mutation Jobs can bypass DB_HOST through ATTUNE__DATABASE__URL\n' >&2
   exit 1
 fi
-if [[ "$(grep -c 'name: DB_HOST' "$root_dir/charts/attune/templates/jobs.yaml")" -lt 5 ]] || \
-   [[ "$(grep -c 'attune.databaseMutationHost' "$root_dir/charts/attune/templates/jobs.yaml")" -lt 5 ]] || \
-   [[ "$(grep -c 'name: ATTUNE__DATABASE__URL' "$root_dir/charts/attune/templates/jobs.yaml")" -lt 5 ]]; then
+if [[ "$(grep -c 'name: DB_HOST' "$root_dir/charts/attune/templates/jobs.yaml")" -lt 4 ]] || \
+   [[ "$(grep -c 'attune.databaseMutationHost' "$root_dir/charts/attune/templates/jobs.yaml")" -lt 4 ]] || \
+   [[ "$(grep -c 'name: ATTUNE__DATABASE__URL' "$root_dir/charts/attune/templates/jobs.yaml")" -lt 4 ]]; then
   printf 'database-mutating storage Jobs are missing maintenance Service overrides\n' >&2
   exit 1
 fi

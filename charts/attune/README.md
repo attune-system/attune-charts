@@ -11,13 +11,17 @@ This chart installs the Attune platform, including these components:
 The chart defaults target a small single-node k3s cluster. All platform
 Deployments use one replica, and shared claims use `ReadWriteOnce`.
 
-Chart `0.9.0` targets Attune `0.8.0` and the independently pinned core pack
-`1.0.3`. API, executor, notifier, supervisor, web, and injected agent images
-inherit the platform tag unless explicitly overridden.
+Chart `0.9.1` targets Attune `0.9.0` and core pack `1.0.4`, using the
+independently versioned `core-1.0.4` init-packs image. API, executor, notifier,
+supervisor, web, and injected agent images inherit `global.imageTag` unless
+explicitly overridden. Keep API and agent images aligned.
 
-This minor chart release removes TimescaleDB. Attune uses native PostgreSQL
-partitions and cache maintenance. Keep API and agent images aligned. Pack
-bootstrap still uses core pack `1.0.3` and its matching image tag.
+Pack publication requires an existing registrar-authorized deployment token in
+the Secret selected by `corePack.deploymentTokenSecret` and
+`corePack.deploymentTokenKey`. The chart does not create or grant that token.
+Do not enable the separate managed-runtime gate merely to permit publication.
+
+Attune uses native PostgreSQL partitions and cache maintenance, not TimescaleDB.
 
 The bundled services use digest-pinned PostgreSQL `18.6-alpine` and RabbitMQ
 `4.3.6-management-alpine` images. Value overrides can replace either pin.
@@ -177,6 +181,45 @@ scheduled renewal a full heartbeat interval before the API's conservative
 local lease-loss deadline. Configure these values with
 `api.executionLogStreams`.
 
+### Supply the deployment credential
+
+For an existing database, provide an already issued integration token whose
+identity is authorized to publish the core pack. The setup generator accepts it
+through `ATTUNE_SETUP_BOOTSTRAP_TOKEN` and puts it in a separate
+`<release>-deployment` Secret. It never creates a token or grants permissions.
+The token is not included in Helm values or `credentials.state`, and is not
+injected into ordinary application Pods. Re-supply it when regenerating manifests
+if you want that Secret included in `secrets.yaml` again.
+
+For a fresh database, no valid token exists before the administrator is created.
+Keep ingress disabled and use this staged procedure:
+
+1. Apply the generated namespace, Secrets and database manifests. Start the Helm
+   installation below in one terminal. The API and web can become ready before
+   pack publication; the publication Job waits for the deployment Secret.
+2. In another terminal, port-forward `service/attune-attune-web` on port 8080.
+   Sign in as the initial administrator, change the bootstrap password, and issue
+   an integration token with the registrar authority required to publish core.
+   Save the token, without a trailing newline, in a private mode-0600 file outside
+   the repository. Do not put the token in a command argument or shell history.
+3. Create the credential Secret from that file. With the generator's default
+   release name, run:
+
+   ```bash
+   kubectl --namespace attune create secret generic attune-deployment \
+     --from-file=ATTUNE_BOOTSTRAP_TOKEN=/private/path/deployment-token
+   ```
+
+4. If the publication deadline elapsed while provisioning the token, retry with
+   `helm upgrade` using the same values and
+   `--set corePack.requiredOnUpgrade=true --wait --wait-for-jobs --timeout 20m`.
+   This reruns authenticated publication and requires the target core release
+   and content readiness. Inspect both Jobs before enabling ingress.
+
+For hand-written values, select this dedicated Secret with
+`corePack.deploymentTokenSecret: attune-deployment`. Retain the token for future
+reconciliation or revoke it explicitly and supply a replacement before upgrades.
+
 Install the release:
 
 ```bash
@@ -217,11 +260,15 @@ web:
           - attune.example.com
 ```
 
-Fresh installations run initialization Jobs as normal release resources, so
-application init containers and Helm can wait for them together. Upgrades run
+Fresh installations run database and user initialization as normal resources.
+Core publication is a post-install hook, followed by a content-readiness hook.
+Ordinary workloads wait for platform readiness, never for core publication.
+Upgrades run
 the PostgreSQL provisioner, migrations, and user initialization as ordered
-`pre-upgrade` hooks. Pack initialization is a `pre-upgrade` hook for shared
-volumes and a `post-upgrade` hook for object storage. The RabbitMQ provisioner
+`pre-upgrade` hooks. In both storage modes, required core reconciliation uses a
+`post-upgrade` hook followed by content readiness. Optional reconciliation uses
+a normal Job with no blocking content hook, so failure leaves the old release
+active and is visible in the Job status without failing Helm. The RabbitMQ provisioner
 remains a normal release Job. New application Pods wait for it to reconcile the
 password while the rolling update retains old ready replicas.
 
@@ -791,9 +838,12 @@ Use this operator flow:
    rollback. The pre-upgrade hooks use the target API and supervisor images,
    target config, runtime Secret, and separate service accounts with the target
    workload-identity annotations. Helm
-   first runs `attune-api --upgrade-pack-releases`, then runs
-   `attune-supervisor migrate-storage`. Both mount the legacy packs and
-   artifacts claims. Either command failing stops the upgrade.
+    first checks that every pack already has an active object-backed release
+    and current unrevoked runtime admission, using a PostgreSQL 18 read-only
+    preflight. Readmit legacy packs through the compatible ordinary API before
+    cutover; this hook never freezes or activates them. It mounts no legacy PVC.
+    The following `attune-supervisor migrate-storage` hook mounts the legacy packs
+    and artifacts claims. Either prerequisite or migration failure stops the upgrade.
 
    ```bash
    helm upgrade attune attune/attune \
@@ -826,25 +876,82 @@ reverse migration or restore the pre-cutover database and PVC backups as one
 consistent set.
 
 Fresh installs run core pack bootstrap as a blocking `post-install` hook. On an
-object-mode upgrade, bootstrap is an ordinary Job and a reconciliation failure
-keeps the previously active core release without failing Helm. Set
+upgrade in either storage mode, bootstrap is an ordinary Job. A failed admission
+is recorded as a failed Job and must keep the prior admitted core release through
+the ordinary API's atomic activation. Helm normally does not wait for ordinary
+Jobs; `--wait-for-jobs` can surface their failure. Set
 `corePack.requiredOnUpgrade=true` only when a platform release cannot run with
-the previous core release; that restores the blocking upgrade hook. A
-shared-volume upgrade remains a blocking `pre-upgrade` hook because that path
-updates files before it loads their database definitions.
+the previous core release; that selects a blocking `post-upgrade` hook after the
+target API is available. Neither mode uses a pre-upgrade SQL loader or copies
+declarations over the active pack volume.
 
 The chart pins the desired immutable release with `corePack.version` and the
 optional `corePack.digest`. Bootstrap reads the active release before writing and
-skips upload when it already matches. Object-mode bootstrap waits for
+skips upload only when runtime admission also matches. Both modes wait for
 `/health/ready` through a Service that selects only API Pods carrying the target
-Helm release revision. It uses a temporary integration identity rather than the
-initial administrator password. Old API Pods cannot satisfy this gate.
+Helm release revision. It uses the existing deployment integration credential
+from the selected Secret, not a temporary identity or the administrator password.
+The chart adapter requires `/health/ready.pack_publication` with integer
+`protocol_version: 1`, integer `client_version: 1`,
+`revision: authenticated-pack-publication-1`, `authorization: registrar`, and
+exactly `immutable_release` and `atomic_deployment` components. The bundled
+client must export the API-only `publish_core` helper and matching version,
+revision and component constants. The adapter then verifies `/health/bootstrap`
+for the required version, release ID, digest and policy revision, including the
+optional digest pin.
+Old API Pods and old publishers cannot satisfy these gates. Choose coordinated
+API/worker/init-packs images; historical default image tags are not asserted
+compatible. `BOOTSTRAP_ADMISSION_ENABLED=false` gates the broader managed-runtime
+contract, not authenticated publication. No chart flag enables that gate, removes
+registrar checks or creates a deployment credential.
+
+Leave `corePack.digest` empty until the exact packaged release archive is
+available. The digest must be SHA-256 of the canonical immutable `pack.tar.gz`,
+including the real native timer binaries for both architectures. It is not an
+OCI image digest or the Python publisher's source-upload tarball hash. The
+application publish workflow derives the `core-<version>` tag from the shipped
+pack manifest; it does not supply a release-archive digest here. Obtain that
+digest from the actual canonical release artifact after packaging, then use the
+same pin for publication and the content-ready hook. No digest or external
+registry checksum is invented by these defaults.
+
+Before installation, record the source revision and measured OCI manifest digest
+for each coordinated platform image, including migrations, init-user and injected
+agent. Verify the live publication contract above and the init-packs image's
+`/scripts/bootstrap_core_pack.py` exports `BOOTSTRAP_CLIENT_VERSION=1`,
+`BOOTSTRAP_REVISION=authenticated-pack-publication-1`, `BOOTSTRAP_COMPONENTS`
+equal to the two components, and callable `publish_core`. The image must provide
+Python 3, PyYAML, core `1.0.4` metadata and both architectures' native timer binaries.
+Record the canonical release-archive checksum separately from its image digest.
+Supply an existing registrar-authorized integration token in the selected Secret.
+
+Use owned acceptance infrastructure to prove fresh publication, idempotent rerun,
+denial and failed-upgrade preservation of prior release/policy/configuration in
+both storage modes, plus the independent content-readiness wait. Missing images
+require central build/artifact preparation and authorized registry publication;
+missing deployment authority requires an operator credential instead. Offline
+renders do not satisfy either requirement. See
+[central acceptance image inputs](../../docs/acceptance-image-pins.md).
+
+The adapter is supplied by ConfigMap and only uses private temporary storage.
+Shared-volume API/workers retain their PVCs; bootstrap no longer mounts or mutates
+those active volumes. API activation must use the unified planner, preserve old
+configuration before mutation and bind original authored release defaults.
+Trigger/schema activation requires exclusive graph admission before owner locks
+and distinct incompatible-rollout acknowledgement, never ordinary force.
 
 API, executor, action-worker, and sensor-worker Pods start from platform
 readiness through the ordinary internal API Service, so that Service remains
 routable while content health is false. API readiness uses `/health/ready`;
 liveness uses `/health/live`. Bootstrap Jobs and workload waits have a
-300-second deadline. Per-service storage modes are rejected by the values schema.
+300-second readiness deadline. Publication does not wait for worker hosts. A
+credential-free content-ready hook at weight 10 runs after publication hooks
+at weight 0 and waits for `/health/content`. This preserves platform-before-content
+ordering without a filesystem completion marker. Per-service storage modes are
+rejected by the values schema.
+
+Run `python3 scripts/test-bootstrap-admission.py` for offline publisher fixtures
+and Helm renders covering both modes, install, optional upgrade and required upgrade.
 
 Run a disruption test against a dedicated three-node test release. The command
 hooks must generate pack, runtime, artifact, and log activity and verify mixed

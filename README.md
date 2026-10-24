@@ -5,9 +5,9 @@ publishes charts for the Attune platform and its public sites.
 
 | Chart | Version | Purpose |
 | --- | --- | --- |
-| `attune` | `0.9.0` | Attune services, workers, PostgreSQL, and RabbitMQ |
+| `attune` | `0.9.1` | Attune services, workers, PostgreSQL, and RabbitMQ |
 | `attune-site` | `0.1.7` | `attunedev.org` and its inquiry form |
-| `attune-docs-site` | `0.1.5` | `docs.attunedev.org` |
+| `attune-docs-site` | `0.1.6` | `docs.attunedev.org` |
 
 ## Add the repository
 
@@ -37,6 +37,13 @@ https://github.com/attune-system/attune-charts.git
 
 ## Install a chart
 
+Chart `0.9.1` targets Attune `0.9.0` and the independently pinned core pack
+`1.0.4`. Supply an existing registrar-authorized deployment token in the Secret
+selected by `corePack.deploymentTokenSecret` and `corePack.deploymentTokenKey`.
+See the [chart bootstrap requirements](charts/attune/README.md) and
+[acceptance image inputs](docs/acceptance-image-pins.md). Do not enable the
+broader managed-runtime gate or restore the SQL loader to bypass publication.
+
 Generate the Helm values and Kubernetes manifests locally. The database and
 RabbitMQ modes are independent, so either service can be bundled or externally
 managed.
@@ -64,7 +71,7 @@ This mode creates `attune-setup/namespace.yaml`, `secrets.yaml`,
 commands in order. Install the CloudNativePG operator before applying the
 generated `postgresql.yaml`.
 
-Chart `0.9.0` targets Attune `0.8.0` and removes the TimescaleDB dependency.
+Chart `0.9.1` targets Attune `0.9.0` without the TimescaleDB dependency.
 Use it for fresh native PostgreSQL installations. Upgrades refuse a database
 with the TimescaleDB extension before provisioning, migrations, or StatefulSet
 changes. Converting populated TimescaleDB installations is not supported.
@@ -240,7 +247,7 @@ helm upgrade --install attune attune/attune \
   --timeout 20m
 ```
 
-The platform chart pulls Attune `0.8.0` images from
+The platform chart pulls Attune `0.9.0` images from
 `ghcr.io/attune-system/attune`. Apply the generated namespace, Secret, and
 optional CloudNativePG manifests before installation. The chart does not accept
 credentials through Helm values.

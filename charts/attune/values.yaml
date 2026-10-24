@@ -4,7 +4,10 @@ fullnameOverride: ""
 global:
   imageRegistry: ghcr.io
   imageNamespace: attune-system
-  imageTag: "0.8.0"
+  # Historical value only: 0.8.0 lacks authenticated publication protocol 1.
+  # Override with a verified coordinated build or per-image manifest digests.
+  # No compatible published image set is assumed; see the chart README.
+  imageTag: "0.9.0"
   imagePullSecrets: []
 
 # Secure workload defaults satisfy Kubernetes Pod Security Admission's
@@ -233,50 +236,70 @@ sharedStorage:
     storageClassName: ""
 
 images:
+  # Optional per-image digest takes precedence over tag. It is an OCI image
+  # digest, NOT corePack.digest (the canonical native-inclusive pack archive).
   api:
     repository: attune/api
+    digest: ""
     tag: ""
     pullPolicy: IfNotPresent
   executor:
     repository: attune/executor
+    digest: ""
     tag: ""
     pullPolicy: IfNotPresent
   notifier:
     repository: attune/notifier
+    digest: ""
     tag: ""
     pullPolicy: IfNotPresent
   supervisor:
     repository: attune/supervisor
+    digest: ""
     tag: ""
     pullPolicy: IfNotPresent
   mcp:
     repository: attune/agent
+    digest: ""
     tag: ""
     pullPolicy: IfNotPresent
   web:
     repository: attune/web
+    digest: ""
     tag: ""
     pullPolicy: IfNotPresent
   migrations:
     repository: attune/migrations
+    digest: ""
     tag: ""
     pullPolicy: IfNotPresent
   initUser:
     repository: attune/init-user
+    digest: ""
     tag: ""
     pullPolicy: IfNotPresent
   initPacks:
     repository: attune/init-packs
-    tag: "core-1.0.3"
+    digest: ""
+    tag: "core-1.0.4"
     pullPolicy: IfNotPresent
   agent:
     repository: attune/agent
+    digest: ""
     tag: ""
     pullPolicy: IfNotPresent
 
 corePack:
-  version: "1.0.3"
+  # Existing API deployment credential, never an identity minted by a Job.
+  # Empty secret name uses security.existingSecret/the chart security secret.
+  deploymentTokenSecret: ""
+  deploymentTokenKey: ATTUNE_BOOTSTRAP_TOKEN
+  version: "1.0.4"
+  # Pin the actual immutable release archive only after packaging native binaries.
+  # A source-only tarball or container-image digest is not this digest.
   digest: ""
+  # Both storage modes use API admission. Optional upgrades use a normal Job;
+  # required upgrades use a post-upgrade hook after target API Pods are ready.
   requiredOnUpgrade: false
 
 jobs:
