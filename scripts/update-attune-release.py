@@ -61,4 +61,15 @@ replace_once(
     rf"\g<1>`{target_version}`\g<2>",
 )
 
+for path in (readme_path, root / "charts/attune/README.md"):
+    content = path.read_text()
+    updated, count = re.subn(
+        r"Chart `[^`]+` targets Attune `[^`]+`",
+        f"Chart `{next_chart_version}` targets Attune `{target_version}`",
+        content,
+    )
+    if not count:
+        raise SystemExit(f"expected chart/application version summary in {path}")
+    path.write_text(updated)
+
 print(f"Updated Attune chart {next_chart_version} to application {target_version}")

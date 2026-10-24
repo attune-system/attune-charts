@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ printf "%s-bootstrap-admission" (include "attune.fullname" .) | trunc 63 | trimSuffix "-" | quote }}
+  labels:
+    {{- include "attune.labels" . | nindent 4 }}
+data:
+  bootstrap-admission.py: |
+{{ .Files.Get "files/bootstrap-admission.py" | indent 4 }}

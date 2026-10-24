@@ -108,7 +108,7 @@ spec:
           resources:
             {{- toYaml .Values.jobs.initUser.resources | nindent 12 }}
 ---
-{{- $initPacksBlocking := or (not .Release.IsUpgrade) .Values.corePack.requiredOnUpgrade (eq .Values.storage.mode "sharedVolume") }}
+{{- $initPacksBlocking := or (not .Release.IsUpgrade) .Values.corePack.requiredOnUpgrade }}
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -118,7 +118,7 @@ metadata:
     app.kubernetes.io/component: init-packs
   {{- if $initPacksBlocking }}
   annotations:
-    helm.sh/hook: {{ if .Release.IsUpgrade }}{{ ternary "post-upgrade" "pre-upgrade" (eq .Values.storage.mode "object") }}{{ else }}post-install{{ end }}
+    helm.sh/hook: {{ if .Release.IsUpgrade }}post-upgrade{{ else }}post-install{{ end }}
     helm.sh/hook-weight: "0"
     helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
   {{- end }}
@@ -131,7 +131,7 @@ spec:
         {{- include "attune.componentLabels" (dict "root" . "component" "init-packs") | nindent 8 }}
     spec:
       restartPolicy: OnFailure
-      {{- include "attune.podSecurityContext" (dict "root" . "useLocalStorage" (eq .Values.storage.mode "object")) | nindent 6 }}
+      {{- include "attune.podSecurityContext" (dict "root" . "useLocalStorage" true) | nindent 6 }}
       {{- if .Values.global.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml .Values.global.imagePullSecrets | nindent 8 }}
@@ -141,156 +141,98 @@ spec:
           image: {{ include "attune.image" (dict "root" . "image" .Values.images.initPacks) | quote }}
           imagePullPolicy: {{ .Values.images.initPacks.pullPolicy | quote }}
           {{- include "attune.containerSecurityContext" (dict "root" . "identity" "helper") | nindent 10 }}
-          envFrom:
-            - secretRef:
-                name: {{ include "attune.secretName" . | quote }}
-          {{- if or (eq .Values.storage.mode "object") .Values.database.postgresql.enabled }}
           env:
-            {{- if .Values.database.postgresql.enabled }}
-            - name: DB_HOST
-              value: {{ include "attune.databaseMutationHost" . | quote }}
-            - name: ATTUNE__DATABASE__URL
-              value: ""
-            {{- end }}
-            {{- if eq .Values.storage.mode "object" }}
+            - name: ATTUNE_BOOTSTRAP_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ default (include "attune.secretName" .) .Values.corePack.deploymentTokenSecret | quote }}
+                  key: {{ .Values.corePack.deploymentTokenKey | quote }}
             - name: ATTUNE_BOOTSTRAP_MODE
               value: api
             - name: ATTUNE_API_URL
               value: {{ printf "http://%s:%v" (include "attune.revisionApiServiceName" .) .Values.api.service.port | quote }}
             - name: ATTUNE_CORE_PACK_VERSION
               value: {{ required "corePack.version is required" .Values.corePack.version | quote }}
+            - name: ATTUNE_BOOTSTRAP_TIMEOUT_SECONDS
+              value: {{ min 300 (int .Values.jobs.initPacks.activeDeadlineSeconds) | quote }}
             {{- if .Values.corePack.digest }}
             - name: ATTUNE_CORE_PACK_DIGEST
               value: {{ .Values.corePack.digest | quote }}
             {{- end }}
-            {{- end }}
-          {{- end }}
-          command: ["/bin/sh", "-ec"]
+          command: ["python3", "/bootstrap/bootstrap-admission.py"]
           args:
-            - |
-              deadline=$(( $(date +%s) + {{ .Values.jobs.initPacks.activeDeadlineSeconds }} ))
-              export PGCONNECT_TIMEOUT=5
-              until python3 - <<'PY'
-              import os
-              import psycopg2
-              from psycopg2 import sql
-
-              with psycopg2.connect(
-                  host=os.environ["DB_HOST"],
-                  port=os.environ["DB_PORT"],
-                  user=os.environ["DB_USER"],
-                  password=os.environ["DB_PASSWORD"],
-                  dbname=os.environ["DB_NAME"],
-              ) as connection:
-                  with connection.cursor() as cursor:
-                      cursor.execute(
-                          sql.SQL("SET search_path TO {}, public").format(
-                              sql.Identifier(os.environ["DB_SCHEMA"])
-                          )
-                      )
-                      cursor.execute(
-                          "SELECT EXISTS (SELECT 1 FROM permission_assignment pa "
-                          "JOIN identity i ON i.id = pa.identity "
-                          "JOIN permission_set ps ON ps.id = pa.permset "
-                          "WHERE i.login = %s AND ps.ref = 'core.admin')",
-                          (os.environ["DEFAULT_ADMIN_LOGIN"],),
-                      )
-                      raise SystemExit(0 if cursor.fetchone()[0] else 1)
-              PY
-              do
-                [ "$(date +%s)" -lt "$deadline" ] || { echo "admin assignment timed out after {{ .Values.jobs.initPacks.activeDeadlineSeconds }}s"; exit 1; }
-                echo "waiting for initial administrator assignment"
-                sleep 2
-              done
-              {{- if eq .Values.storage.mode "object" }}
-              until python3 - <<'PY'
-              import os
-              import urllib.request
-
-              with urllib.request.urlopen(
-                  f"{os.environ['ATTUNE_API_URL']}/health/ready", timeout=5
-              ) as response:
-                  raise SystemExit(0 if 200 <= response.status < 300 else 1)
-              PY
-              do
-                [ "$(date +%s)" -lt "$deadline" ] || { echo "api platform readiness timed out after {{ .Values.jobs.initPacks.activeDeadlineSeconds }}s"; exit 1; }
-                echo "waiting for api";
-                sleep 2;
-              done
-              {{- if and .Release.IsUpgrade (eq .Values.storage.mode "object") (not .Values.corePack.requiredOnUpgrade) }}
-              if ! /init-packs.sh; then
-                echo "core pack reconciliation failed; keeping the previously active release" >&2
-              fi
-              {{- else }}
-              exec /init-packs.sh
-              {{- end }}
-              {{- else }}
-              until python3 - <<'PY'
-              import os
-              import psycopg2
-
-              conn = psycopg2.connect(
-                  host=os.environ["DB_HOST"],
-                  port=os.environ["DB_PORT"],
-                  user=os.environ["DB_USER"],
-                  password=os.environ["DB_PASSWORD"],
-                  dbname=os.environ["DB_NAME"],
-              )
-              try:
-                  with conn.cursor() as cur:
-                      cur.execute("SET search_path TO %s, public" % os.environ["DB_SCHEMA"])
-                      cur.execute("SELECT to_regclass(%s)", (f"{os.environ['DB_SCHEMA']}.identity",))
-                      if not cur.fetchone()[0]:
-                          raise SystemExit(1)
-                      cur.execute(
-                          "SELECT EXISTS (SELECT 1 FROM identity WHERE login = %s)",
-                          (os.environ["DEFAULT_ADMIN_LOGIN"],),
-                      )
-                      raise SystemExit(0 if cur.fetchone()[0] else 1)
-              finally:
-                  conn.close()
-              PY
-              do
-                echo "waiting for database schema";
-                sleep 2;
-              done
-              /init-packs.sh
-              marker=/opt/attune/packs/.attune-bootstrap-r{{ .Release.Revision }}
-              temporary="${marker}.tmp.$$"
-              : > "${temporary}"
-              mv "${temporary}" "${marker}"
-              {{- end }}
-          {{- if eq .Values.storage.mode "sharedVolume" }}
+            - publish
           volumeMounts:
-            - name: packs
-              mountPath: /opt/attune/packs
-            - name: runtime-envs
-              mountPath: /opt/attune/runtime_envs
-            - name: artifacts
-              mountPath: /opt/attune/artifacts
-          {{- else }}
-          volumeMounts:
+            - name: bootstrap-admission
+              mountPath: /bootstrap
+              readOnly: true
             - name: pack-staging
               mountPath: /tmp
-          {{- end }}
           resources:
             {{- toYaml .Values.jobs.initPacks.resources | nindent 12 }}
       volumes:
-        {{- if eq .Values.storage.mode "sharedVolume" }}
-        - name: packs
-          persistentVolumeClaim:
-            claimName: {{ printf "%s-packs" (include "attune.fullname" .) | quote }}
-        - name: runtime-envs
-          persistentVolumeClaim:
-            claimName: {{ printf "%s-runtime-envs" (include "attune.fullname" .) | quote }}
-        - name: artifacts
-          persistentVolumeClaim:
-            claimName: {{ printf "%s-artifacts" (include "attune.fullname" .) | quote }}
-        {{- else }}
+        - name: bootstrap-admission
+          configMap:
+            name: {{ printf "%s-bootstrap-admission" (include "attune.fullname" .) | trunc 63 | trimSuffix "-" | quote }}
         - name: pack-staging
           emptyDir:
             sizeLimit: {{ .Values.storage.local.packs.sizeLimit | quote }}
-        {{- end }}
+{{- if $initPacksBlocking }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ printf "%s-content-ready" (include "attune.fullname" .) | trunc 63 | trimSuffix "-" | quote }}
+  labels:
+    {{- include "attune.labels" . | nindent 4 }}
+    app.kubernetes.io/component: content-ready
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-weight: "10"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  activeDeadlineSeconds: {{ .Values.jobs.initPacks.activeDeadlineSeconds | default 300 }}
+  ttlSecondsAfterFinished: {{ .Values.jobs.initPacks.ttlSecondsAfterFinished }}
+  template:
+    metadata:
+      labels:
+        {{- include "attune.componentLabels" (dict "root" . "component" "content-ready") | nindent 8 }}
+    spec:
+      restartPolicy: OnFailure
+      {{- include "attune.podSecurityContext" (dict "root" .) | nindent 6 }}
+      {{- if .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml .Values.global.imagePullSecrets | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: content-ready
+          image: {{ include "attune.image" (dict "root" . "image" .Values.images.initPacks) | quote }}
+          imagePullPolicy: {{ .Values.images.initPacks.pullPolicy | quote }}
+          {{- include "attune.containerSecurityContext" (dict "root" . "identity" "helper") | nindent 10 }}
+          command: ["python3", "/bootstrap/bootstrap-admission.py"]
+          args: ["wait"]
+          env:
+            - name: ATTUNE_CORE_PACK_VERSION
+              value: {{ required "corePack.version is required" .Values.corePack.version | quote }}
+            {{- if .Values.corePack.digest }}
+            - name: ATTUNE_CORE_PACK_DIGEST
+              value: {{ .Values.corePack.digest | quote }}
+            {{- end }}
+            - name: ATTUNE_API_URL
+              value: {{ printf "http://%s:%v" (include "attune.revisionApiServiceName" .) .Values.api.service.port | quote }}
+            - name: ATTUNE_BOOTSTRAP_TIMEOUT_SECONDS
+              value: {{ min 300 (int .Values.jobs.initPacks.activeDeadlineSeconds) | quote }}
+          volumeMounts:
+            - name: bootstrap-admission
+              mountPath: /bootstrap
+              readOnly: true
+          resources:
+            {{- toYaml .Values.jobs.initPacks.resources | nindent 12 }}
+      volumes:
+        - name: bootstrap-admission
+          configMap:
+            name: {{ printf "%s-bootstrap-admission" (include "attune.fullname" .) | trunc 63 | trimSuffix "-" | quote }}
+{{- end }}
 {{- if eq (include "attune.storageCutoverRequired" .) "true" }}
 {{- if not .Values.storage.object.migrateFromSharedVolume }}
 {{- fail "legacy Attune PVCs were found during a sharedVolume-to-object upgrade; set storage.object.migrateFromSharedVolume=true only after stopping writes and backing up the database and PVCs" }}
@@ -379,11 +321,29 @@ spec:
       {{- end }}
       containers:
         - name: upgrade-pack-releases
-          image: {{ include "attune.image" (dict "root" . "image" .Values.images.api) | quote }}
-          imagePullPolicy: {{ .Values.images.api.pullPolicy | quote }}
-          {{- include "attune.containerSecurityContext" (dict "root" . "identity" "attune") | nindent 10 }}
-          command: ["/usr/local/bin/attune-service"]
-          args: ["--upgrade-pack-releases"]
+          # Storage metadata only, not proof of runtime admission. Never invoke
+          # the legacy release freezer or create/activate releases here.
+          image: {{ printf "%s:%s" .Values.database.postgresql.image.repository .Values.database.postgresql.image.tag | quote }}
+          {{- include "attune.containerSecurityContext" (dict "root" . "identity" "postgres") | nindent 10 }}
+          command: ["/bin/sh", "-ec"]
+          args:
+            - |
+              export PGPASSWORD="$DB_PASSWORD" PGCONNECT_TIMEOUT=5
+              if ! psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 -v schema="$DB_SCHEMA" -At <<'SQL' | grep -qx t
+              BEGIN READ ONLY;
+              SET search_path TO :"schema", public;
+              SELECT NOT EXISTS (
+                SELECT 1 FROM pack p
+                LEFT JOIN pack_release pr ON pr.id = p.active_release AND pr.pack = p.id
+                WHERE pr.id IS NULL
+                  OR (pr.object_key IS NULL AND pr.archive_path IS NULL)
+              );
+              COMMIT;
+              SQL
+              then
+                echo 'storage cutover requires an immutable active release with an object reference or legacy archive for every pack; no release was frozen or activated' >&2
+                exit 1
+              fi
           envFrom:
             - secretRef:
                 name: {{ include "attune.secretName" . | quote }}
@@ -400,28 +360,8 @@ spec:
               value: {{ .Values.database.schema | quote }}
             - name: ATTUNE__DATABASE__MAX_CONNECTIONS
               value: {{ .Values.jobs.storageMigration.maxDatabaseConnections | quote }}
-          volumeMounts:
-            - name: config
-              mountPath: /opt/attune/config.yaml
-              subPath: config.yaml
-            - name: legacy-packs
-              mountPath: /opt/attune/packs
-              readOnly: false
-            - name: legacy-artifacts
-              mountPath: /opt/attune/artifacts
-              readOnly: false
           resources:
             {{- toYaml .Values.jobs.storageMigration.resources | nindent 12 }}
-      volumes:
-        - name: config
-          configMap:
-            name: {{ printf "%s-storage-migration-config" (include "attune.fullname" .) | trunc 63 | trimSuffix "-" | quote }}
-        - name: legacy-packs
-          persistentVolumeClaim:
-            claimName: {{ printf "%s-packs" (include "attune.fullname" .) | quote }}
-        - name: legacy-artifacts
-          persistentVolumeClaim:
-            claimName: {{ printf "%s-artifacts" (include "attune.fullname" .) | quote }}
 ---
 apiVersion: batch/v1
 kind: Job

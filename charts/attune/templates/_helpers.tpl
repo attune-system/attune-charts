@@ -39,12 +39,19 @@ app.kubernetes.io/component: {{ .component | quote }}
 {{- $namespace := $root.Values.global.imageNamespace -}}
 {{- $repository := $image.repository -}}
 {{- $tag := default $root.Values.global.imageTag $image.tag -}}
+{{- $name := $repository -}}
 {{- if and $registry $namespace -}}
-{{- printf "%s/%s/%s:%s" $registry $namespace $repository $tag -}}
+{{- $name = printf "%s/%s/%s" $registry $namespace $repository -}}
 {{- else if $registry -}}
-{{- printf "%s/%s:%s" $registry $repository $tag -}}
+{{- $name = printf "%s/%s" $registry $repository -}}
+{{- end -}}
+{{- if $image.digest -}}
+{{- if not (regexMatch "^sha256:[0-9a-f]{64}$" $image.digest) -}}
+{{- fail "images.*.digest must be an actual sha256:<64 lowercase hex> OCI manifest digest" -}}
+{{- end -}}
+{{- printf "%s@%s" $name $image.digest -}}
 {{- else -}}
-{{- printf "%s:%s" $repository $tag -}}
+{{- printf "%s:%s" $name $tag -}}
 {{- end -}}
 {{- end -}}
 
