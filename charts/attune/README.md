@@ -11,8 +11,8 @@ This chart installs the Attune platform, including these components:
 The chart defaults target a small single-node k3s cluster. All platform
 Deployments use one replica, and shared claims use `ReadWriteOnce`.
 
-Chart `0.9.1` targets Attune `0.9.0` and core pack `1.0.4`, using the
-independently versioned `core-1.0.4` init-packs image. API, executor, notifier,
+Chart `0.10.1` targets Attune `0.10.1` and core pack `1.0.5`, using the
+independently versioned `core-1.0.5` init-packs image. API, executor, notifier,
 supervisor, web, and injected agent images inherit `global.imageTag` unless
 explicitly overridden. Keep API and agent images aligned.
 
@@ -27,6 +27,22 @@ The bundled services use digest-pinned PostgreSQL `18.6-alpine` and RabbitMQ
 `4.3.6-management-alpine` images. Value overrides can replace either pin.
 PostgreSQL 16 data requires a logical backup and restore into PostgreSQL 18.
 The chart does not run `pg_upgrade` or copy database files.
+
+### Upgrading encrypted data to Attune 0.10.1
+
+Existing installations with encrypted data from before `0.10.1` require the
+[offline encryption conversion procedure](https://github.com/attune-system/attune/blob/v0.10.1/docs/deployment/encryption-fingerprint-remediation.md#offline-upgrade-procedure).
+This is not an unattended rolling upgrade. Back up the database and matching
+file/object storage, rehearse conversion on a restored copy, and stop all service
+and external writers. Apply the release's forward migration and run the explicit
+`attune-encryption-convert` tool before starting the new workloads.
+
+The chart does not stop all writers or run this conversion for you. Keep the
+existing master secret unchanged during conversion; changing it is not a
+substitute for conversion. Follow the procedure's verification and temporary
+database-role requirements. After conversion, reverting only the image tag is
+unsafe; recovery requires matching data, storage, and binaries. Fresh installations
+do not need conversion.
 
 ### TimescaleDB upgrade boundary
 
@@ -921,7 +937,7 @@ agent. Verify the live publication contract above and the init-packs image's
 `/scripts/bootstrap_core_pack.py` exports `BOOTSTRAP_CLIENT_VERSION=1`,
 `BOOTSTRAP_REVISION=authenticated-pack-publication-1`, `BOOTSTRAP_COMPONENTS`
 equal to the two components, and callable `publish_core`. The image must provide
-Python 3, PyYAML, core `1.0.4` metadata and both architectures' native timer binaries.
+Python 3, PyYAML, core `1.0.5` metadata and both architectures' native timer binaries.
 Record the canonical release-archive checksum separately from its image digest.
 Supply an existing registrar-authorized integration token in the selected Secret.
 

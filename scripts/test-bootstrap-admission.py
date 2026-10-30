@@ -114,7 +114,7 @@ class PublisherTests(unittest.TestCase):
 class HelmTests(unittest.TestCase):
     def test_default_core_pins_select_the_canonical_source_release_without_fake_digest(self):
         values = yaml.safe_load((ROOT / "charts/attune/values.yaml").read_text())
-        self.assertEqual(values["corePack"]["version"], "1.0.4")
+        self.assertEqual(values["corePack"]["version"], "1.0.5")
         self.assertEqual(values["images"]["initPacks"]["tag"], "core-" + values["corePack"]["version"])
         self.assertEqual(values["corePack"]["digest"], "")
         for path in (ROOT / "charts/attune/values.yaml", ROOT / "scripts/verify.sh"):
@@ -206,8 +206,8 @@ class HelmTests(unittest.TestCase):
                     env = {item["name"]:item.get("value") for item in container["env"]}
                     self.assertEqual(env["ATTUNE_BOOTSTRAP_MODE"], "api")
                     self.assertEqual(env["ATTUNE_CORE_PACK_DIGEST"], "a" * 64)
-                    self.assertEqual(env["ATTUNE_CORE_PACK_VERSION"], "1.0.4")
-                    self.assertTrue(container["image"].endswith("/init-packs:core-1.0.4"))
+                    self.assertEqual(env["ATTUNE_CORE_PACK_VERSION"], "1.0.5")
+                    self.assertTrue(container["image"].endswith("/init-packs:core-1.0.5"))
                     self.assertTrue(env["ATTUNE_API_URL"].endswith("-api-r1:8080"))
                     self.assertEqual(container["args"], ["publish"])
                     self.assertNotIn("envFrom", container)
@@ -224,7 +224,7 @@ class HelmTests(unittest.TestCase):
                     content_container = content["spec"]["template"]["spec"]["containers"][0]
                     self.assertEqual(content_container["image"], container["image"])
                     content_env = {item["name"]: item.get("value") for item in content_container["env"]}
-                    self.assertEqual(content_env["ATTUNE_CORE_PACK_VERSION"], "1.0.4")
+                    self.assertEqual(content_env["ATTUNE_CORE_PACK_VERSION"], "1.0.5")
                     self.assertEqual(content_env["ATTUNE_CORE_PACK_DIGEST"], "a" * 64)
                     self.assertNotIn("envFrom", content["spec"]["template"]["spec"]["containers"][0])
                     api = next(doc for doc in docs if doc["kind"] == "Deployment" and doc["spec"]["template"]["metadata"]["labels"].get("app.kubernetes.io/component") == "api")

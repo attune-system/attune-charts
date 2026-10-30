@@ -11,7 +11,7 @@ class Pins(unittest.TestCase):
         values = yaml.safe_load((ROOT / "charts/attune/values.yaml").read_text())
         self.assertTrue(all(image["digest"] == "" for image in values["images"].values()))
         self.assertEqual(values["corePack"]["digest"], "")
-        self.assertEqual(str(values["corePack"]["version"]), "1.0.4")
+        self.assertEqual(str(values["corePack"]["version"]), "1.0.5")
 
     def test_digest_path_requires_full_manifest_digest_and_preserves_tag_fallback(self):
         source = (ROOT / "charts/attune/templates/_helpers.tpl").read_text()

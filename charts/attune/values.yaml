@@ -4,10 +4,9 @@ fullnameOverride: ""
 global:
   imageRegistry: ghcr.io
   imageNamespace: attune-system
-  # Historical value only: 0.8.0 lacks authenticated publication protocol 1.
-  # Override with a verified coordinated build or per-image manifest digests.
-  # No compatible published image set is assumed; see the chart README.
-  imageTag: "0.9.0"
+  # Stable platform release. Per-image tags or digests can override this value;
+  # the init-packs image is versioned independently below.
+  imageTag: "0.10.1"
   imagePullSecrets: []
 
 # Secure workload defaults satisfy Kubernetes Pod Security Admission's
@@ -281,7 +280,7 @@ images:
   initPacks:
     repository: attune/init-packs
     digest: ""
-    tag: "core-1.0.4"
+    tag: "core-1.0.5"
     pullPolicy: IfNotPresent
   agent:
     repository: attune/agent
@@ -294,7 +293,7 @@ corePack:
   # Empty secret name uses security.existingSecret/the chart security secret.
   deploymentTokenSecret: ""
   deploymentTokenKey: ATTUNE_BOOTSTRAP_TOKEN
-  version: "1.0.4"
+  version: "1.0.5"
   # Pin the actual immutable release archive only after packaging native binaries.
   # A source-only tarball or container-image digest is not this digest.
   digest: ""

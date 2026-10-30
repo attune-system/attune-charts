@@ -24,7 +24,7 @@ Cluster provisioning, namespace/PVC ownership and the live both-storage-mode
 fresh/failed-upgrade/rollback matrix remain explicit central responsibilities.
 These offline checks start no cluster workloads and do not prove live admission.
 
-The chart defaults to platform `0.9.0`, independently from core `1.0.4`.
+The chart defaults to platform `0.10.1`, independently from core `1.0.5`.
 Older `0.8.0` platform images cannot satisfy this bootstrap contract.
 The API must advertise `pack_publication` on `/health/ready` with integer
 protocol/client versions `1`, revision `authenticated-pack-publication-1`,
