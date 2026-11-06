@@ -11,7 +11,7 @@ This chart installs the Attune platform, including these components:
 The chart defaults target a small single-node k3s cluster. All platform
 Deployments use one replica, and shared claims use `ReadWriteOnce`.
 
-Chart `0.10.1` targets Attune `0.10.1` and core pack `1.0.5`, using the
+Chart `0.10.2` targets Attune `0.10.2` and core pack `1.0.5`, using the
 independently versioned `core-1.0.5` init-packs image. API, executor, notifier,
 supervisor, web, and injected agent images inherit `global.imageTag` unless
 explicitly overridden. Keep API and agent images aligned.
