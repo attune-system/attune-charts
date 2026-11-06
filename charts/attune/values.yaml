@@ -6,7 +6,7 @@ global:
   imageNamespace: attune-system
   # Stable platform release. Per-image tags or digests can override this value;
   # the init-packs image is versioned independently below.
-  imageTag: "0.10.1"
+  imageTag: "0.10.2"
   imagePullSecrets: []
 
 # Secure workload defaults satisfy Kubernetes Pod Security Admission's
