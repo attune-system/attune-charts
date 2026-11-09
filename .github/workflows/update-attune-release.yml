@@ -52,7 +52,7 @@ jobs:
 
       - name: Package charts
         if: steps.release.outputs.changed == 'true'
-        run: scripts/package.sh
+        run: scripts/package.sh attune
 
       - name: Verify charts
         if: steps.release.outputs.changed == 'true'

@@ -4,3 +4,6 @@
 !/attune-setup/logging/*.yaml
 !/attune-setup/logging/README.md
 /.scratch/
+
+__pycache__/
+*.pyc
