@@ -2,8 +2,22 @@ apiVersion: v1
 entries:
   attune:
   - apiVersion: v2
+    appVersion: 0.10.4
+    created: "2026-11-11T16:22:50.333654081-06:00"
+    description: Helm chart for deploying the Attune automation platform
+    digest: bda1b2a2b7210d906e252b2ca254bfdedf0de91ffa21da5a84db3aa7943ac028
+    home: https://github.com/attune-system/attune
+    icon: https://avatars.githubusercontent.com/u/284962476?s=200&v=4
+    name: attune
+    sources:
+    - https://github.com/attune-system/attune
+    type: application
+    urls:
+    - packages/attune-0.10.4.tgz
+    version: 0.10.4
+  - apiVersion: v2
     appVersion: 0.10.3
-    created: "2026-11-09T07:56:59.565224836-06:00"
+    created: "2026-11-11T16:22:50.331444173-06:00"
     description: Helm chart for deploying the Attune automation platform
     digest: e099e65c9f4219e172e5c9333247950f333d2c7aa8dd9fb89353dc2635afedc0
     home: https://github.com/attune-system/attune
@@ -17,7 +31,7 @@ entries:
     version: 0.10.3
   - apiVersion: v2
     appVersion: 0.10.1
-    created: "2026-10-30T08:00:42.390758095-05:00"
+    created: "2026-11-11T16:22:50.329123802-06:00"
     description: Helm chart for deploying the Attune automation platform
     digest: 454b68137f2b2cb22b8e98c3c87fec5955d758be7e8ae550f88bea8e6347608d
     home: https://github.com/attune-system/attune
@@ -31,7 +45,7 @@ entries:
     version: 0.10.1
   - apiVersion: v2
     appVersion: 0.9.0
-    created: "2026-10-30T08:00:42.477417033-05:00"
+    created: "2026-11-11T16:22:50.521582616-06:00"
     description: Helm chart for deploying the Attune automation platform
     digest: d32a3f82c85496497b724b73b5ad9a9a2a8c8edb4ccdc8c49d12410e311c3655
     home: https://github.com/attune-system/attune
@@ -45,7 +59,7 @@ entries:
     version: 0.9.1
   - apiVersion: v2
     appVersion: 0.8.0
-    created: "2026-10-30T08:00:42.471283904-05:00"
+    created: "2026-11-11T16:22:50.519313834-06:00"
     description: Helm chart for deploying the Attune automation platform
     digest: e2bef05b2e2e2f90450c96db63ac74a652ea9c5bfcae2c265aecfc65e1a954f6
     home: https://github.com/attune-system/attune
@@ -59,7 +73,7 @@ entries:
     version: 0.9.0
   - apiVersion: v2
     appVersion: 0.7.5
-    created: "2026-10-30T08:00:42.441050613-05:00"
+    created: "2026-11-11T16:22:50.385648941-06:00"
     description: Helm chart for deploying the Attune automation platform
     digest: 6003fca662dbf7eb2c8980c181eb76fdb5bc0b76257d5f68701297a8f75803b3
     home: https://github.com/attune-system/attune
@@ -73,7 +87,7 @@ entries:
     version: 0.8.10
   - apiVersion: v2
     appVersion: 0.7.4
-    created: "2026-10-30T08:00:42.467818126-05:00"
+    created: "2026-11-11T16:22:50.506992778-06:00"
     description: Helm chart for deploying the Attune automation platform
     digest: ab973b7ea218de342aba2a17f585d1ddb4f5353ffdee2f9d9418b7a258188f6e
     home: https://github.com/attune-system/attune
@@ -87,7 +101,7 @@ entries:
     version: 0.8.9
   - apiVersion: v2
     appVersion: 0.7.3
-    created: "2026-10-30T08:00:42.464360965-05:00"
+    created: "2026-11-11T16:22:50.494193311-06:00"
     description: Helm chart for deploying the Attune automation platform
     digest: e870c67b5e8ddcc29b3b3829ab756f68f52f6e65e176215a3cd2893cdb22831b
     home: https://github.com/attune-system/attune
@@ -101,7 +115,7 @@ entries:
     version: 0.8.8
   - apiVersion: v2
     appVersion: 0.7.2
-    created: "2026-10-30T08:00:42.459918761-05:00"
+    created: "2026-11-11T16:22:50.465189117-06:00"
     description: Helm chart for deploying the Attune automation platform
     digest: bd41bae9ae5767cadcae31c11ca496c1bab56fddc25925f9267e6544c5cec3fd
     home: https://github.com/attune-system/attune
@@ -115,7 +129,7 @@ entries:
     version: 0.8.7
   - apiVersion: v2
     appVersion: 0.7.1
-    created: "2026-10-30T08:00:42.456799196-05:00"
+    created: "2026-11-11T16:22:50.433976096-06:00"
     description: Helm chart for deploying the Attune automation platform
     digest: 16d6894384639ca5d7224f885cb7053409c22bdc11a85ca772c439e626c8d0af
     home: https://github.com/attune-system/attune
@@ -129,7 +143,7 @@ entries:
     version: 0.8.6
   - apiVersion: v2
     appVersion: 0.7.0
-    created: "2026-10-30T08:00:42.453874044-05:00"
+    created: "2026-11-11T16:22:50.403797156-06:00"
     description: Helm chart for deploying the Attune automation platform
     digest: 7423da402f4e1543d1554f51a91314e1dc46a326cf1458beaaa42ba461489b67
     home: https://github.com/attune-system/attune
@@ -143,7 +157,7 @@ entries:
     version: 0.8.5
   - apiVersion: v2
     appVersion: 0.6.3
-    created: "2026-10-30T08:00:42.450601062-05:00"
+    created: "2026-11-11T16:22:50.389582048-06:00"
     description: Helm chart for deploying the Attune automation platform
     digest: 3e2c320e2a78c887bc02d62259d8d90e12b9347603a644948ae8fe9198ee023e
     home: https://github.com/attune-system/attune
@@ -157,7 +171,7 @@ entries:
     version: 0.8.3
   - apiVersion: v2
     appVersion: 0.6.3
-    created: "2026-10-30T08:00:42.44455685-05:00"
+    created: "2026-11-11T16:22:50.387675195-06:00"
     description: Helm chart for deploying the Attune automation platform
     digest: 32cf7c80c66b5bf77d1300cb4c0d979dd1748bf25b179930f2b5de9561e06aed
     home: https://github.com/attune-system/attune
@@ -171,7 +185,7 @@ entries:
     version: 0.8.2
   - apiVersion: v2
     appVersion: 0.6.3
-    created: "2026-10-30T08:00:42.436748695-05:00"
+    created: "2026-11-11T16:22:50.382486226-06:00"
     description: Helm chart for deploying the Attune automation platform
     digest: 13a966387c35cfb1e576c26ac54c41aec67adf7ab9712e8c993a0b7db692f369
     home: https://github.com/attune-system/attune
@@ -185,7 +199,7 @@ entries:
     version: 0.8.1
   - apiVersion: v2
     appVersion: 0.6.2
-    created: "2026-10-30T08:00:42.431168701-05:00"
+    created: "2026-11-11T16:22:50.380680487-06:00"
     description: Helm chart for deploying the Attune automation platform
     digest: a64a03b873aeff05204ea709ed981f531eb5dacdf050947625c302798c0a6105
     home: https://github.com/attune-system/attune
@@ -199,7 +213,7 @@ entries:
     version: 0.8.0
   - apiVersion: v2
     appVersion: 0.6.2
-    created: "2026-10-30T08:00:42.425615173-05:00"
+    created: "2026-11-11T16:22:50.378870978-06:00"
     description: Helm chart for deploying the Attune automation platform
     digest: 9255f72f462300c50a5d465906adbaac1a73a0959b750a6964877a15224f1a92
     home: https://github.com/attune-system/attune
@@ -213,7 +227,7 @@ entries:
     version: 0.7.3
   - apiVersion: v2
     appVersion: 0.6.1
-    created: "2026-10-30T08:00:42.422753323-05:00"
+    created: "2026-11-11T16:22:50.377193752-06:00"
     description: Helm chart for deploying the Attune automation platform
     digest: 5a4af3f97b5992b6aa8f376dc2e48cda14b5e6ecd3244b67ba3fcf9daa852241
     home: https://github.com/attune-system/attune
@@ -226,7 +240,7 @@ entries:
     version: 0.7.2
   - apiVersion: v2
     appVersion: 0.6.1
-    created: "2026-10-30T08:00:42.419881307-05:00"
+    created: "2026-11-11T16:22:50.374165067-06:00"
     description: Helm chart for deploying the Attune automation platform
     digest: df5df3d0a463dd379cd4c28cd7c947690aa91af87b0007525349404715c82637
     home: https://github.com/attune-system/attune
@@ -239,7 +253,7 @@ entries:
     version: 0.7.1
   - apiVersion: v2
     appVersion: 0.6.0
-    created: "2026-10-30T08:00:42.417288544-05:00"
+    created: "2026-11-11T16:22:50.372454713-06:00"
     description: Helm chart for deploying the Attune automation platform
     digest: 3ce2a5ce11d52d13e53dcb5c81686e94702c61665a83fdebd02092918df473c2
     home: https://github.com/attune-system/attune
@@ -252,7 +266,7 @@ entries:
     version: 0.7.0
   - apiVersion: v2
     appVersion: 0.5.3
-    created: "2026-10-30T08:00:42.414523602-05:00"
+    created: "2026-11-11T16:22:50.370723132-06:00"
     description: Helm chart for deploying the Attune automation platform
     digest: 497209836022d093553bb83fa47568be5e6851b087b03a949c637dba1c15e52b
     home: https://github.com/attune-system/attune
@@ -265,7 +279,7 @@ entries:
     version: 0.6.3
   - apiVersion: v2
     appVersion: 0.5.3
-    created: "2026-10-30T08:00:42.408812637-05:00"
+    created: "2026-11-11T16:22:50.36914614-06:00"
     description: Helm chart for deploying the Attune automation platform
     digest: 0b63ef02237effb8853482d74d284feaaab3b795e8239448e2a4736f96c6d32a
     home: https://github.com/attune-system/attune
@@ -278,7 +292,7 @@ entries:
     version: 0.6.2
   - apiVersion: v2
     appVersion: 0.5.3
-    created: "2026-10-30T08:00:42.406541091-05:00"
+    created: "2026-11-11T16:22:50.367560094-06:00"
     description: Helm chart for deploying the Attune automation platform
     digest: 3b0ad9c349f8b2c9c7523543a96361c40bf1efe0fb99b35dbc385dd0f1843d6a
     home: https://github.com/attune-system/attune
@@ -291,7 +305,7 @@ entries:
     version: 0.6.1
   - apiVersion: v2
     appVersion: 0.5.3
-    created: "2026-10-30T08:00:42.404611519-05:00"
+    created: "2026-11-11T16:22:50.365256385-06:00"
     description: Helm chart for deploying the Attune automation platform
     digest: ca547748d9575b0133071f5ef1a17f5aab8dfadba8d439a18b90700ca19d1c81
     home: https://github.com/attune-system/attune
@@ -304,7 +318,7 @@ entries:
     version: 0.6.0
   - apiVersion: v2
     appVersion: 0.5.3
-    created: "2026-10-30T08:00:42.402575965-05:00"
+    created: "2026-11-11T16:22:50.363814317-06:00"
     description: Helm chart for deploying the Attune automation platform
     digest: 4f9735b837c6782b9853dc143b1f4ca617ca61396cff1a9cdef522d0144f79b8
     home: https://github.com/attune-system/attune
@@ -317,7 +331,7 @@ entries:
     version: 0.5.4
   - apiVersion: v2
     appVersion: 0.5.3
-    created: "2026-10-30T08:00:42.400501159-05:00"
+    created: "2026-11-11T16:22:50.362300054-06:00"
     description: Helm chart for deploying the Attune automation platform
     digest: 912ff36e6a68365da1b6d2c8aa1af65078635f97ec5d0f51884b1d10157d0676
     home: https://github.com/attune-system/attune
@@ -330,7 +344,7 @@ entries:
     version: 0.5.3
   - apiVersion: v2
     appVersion: 0.5.1
-    created: "2026-10-30T08:00:42.396223095-05:00"
+    created: "2026-11-11T16:22:50.361157047-06:00"
     description: Helm chart for deploying the Attune automation platform
     digest: 791dac90a1b5f40a2162dd0ea4332d0c1bd7df4914d7ece21d10c35ba1db6b81
     home: https://github.com/attune-system/attune
@@ -343,7 +357,7 @@ entries:
     version: 0.5.1
   - apiVersion: v2
     appVersion: 0.4.0
-    created: "2026-10-30T08:00:42.394435032-05:00"
+    created: "2026-11-11T16:22:50.359981879-06:00"
     description: Helm chart for deploying the Attune automation platform
     digest: f39984402b3a7b648080217dc021e10004fe43dd869c39b5aabc852a735ac4c7
     home: https://github.com/attune-system/attune
@@ -356,7 +370,7 @@ entries:
     version: 0.4.2
   - apiVersion: v2
     appVersion: 0.4.0
-    created: "2026-10-30T08:00:42.392510859-05:00"
+    created: "2026-11-11T16:22:50.353136036-06:00"
     description: Helm chart for deploying the Attune automation platform
     digest: b02dc380097a8d23eff5a9995daa5f37a0cebb84d4034ab8d2437cfc12028213
     home: https://github.com/attune-system/attune
@@ -370,7 +384,7 @@ entries:
   attune-docs-site:
   - apiVersion: v2
     appVersion: 0.1.15
-    created: "2026-10-30T08:00:42.48106391-05:00"
+    created: "2026-11-11T16:22:50.559691044-06:00"
     description: Public documentation site for Attune
     digest: 215646ef20edaad33f3fb50869bb2daedbfe041d4721f2960b66973c3e9bf380
     home: https://docs.attunedev.org
@@ -383,7 +397,7 @@ entries:
     version: 0.1.6
   - apiVersion: v2
     appVersion: 0.1.14
-    created: "2026-10-30T08:00:42.480553608-05:00"
+    created: "2026-11-11T16:22:50.559329094-06:00"
     description: Public documentation site for Attune
     digest: f2c41d9a6b5435f49c3ae972816f990c31d245be95f2932167ed7cdfdce76780
     home: https://docs.attunedev.org
@@ -396,7 +410,7 @@ entries:
     version: 0.1.5
   - apiVersion: v2
     appVersion: 0.1.12
-    created: "2026-10-30T08:00:42.480050282-05:00"
+    created: "2026-11-11T16:22:50.558947721-06:00"
     description: Public documentation site for Attune
     digest: 29a9b9c3bcbb06de51c95840aa3e9b4bc4708f676e2f8c218ba0f0d47eeb8991
     home: https://docs.attunedev.org
@@ -409,7 +423,7 @@ entries:
     version: 0.1.4
   - apiVersion: v2
     appVersion: 0.1.2
-    created: "2026-10-30T08:00:42.479554312-05:00"
+    created: "2026-11-11T16:22:50.544238173-06:00"
     description: Public documentation site for Attune
     digest: 7656b3f69d653d613dfa1c6c53165edd60e9bab58b30d22330c573e521928d5b
     home: https://docs.attunedev.org
@@ -422,7 +436,7 @@ entries:
     version: 0.1.3
   - apiVersion: v2
     appVersion: 0.1.1
-    created: "2026-10-30T08:00:42.479152714-05:00"
+    created: "2026-11-11T16:22:50.522842464-06:00"
     description: Public documentation site for Attune
     digest: 5407d6af5773a21e356ed53e9d066ebc13906bf08e86feb9f39276abaeb306ad
     home: https://docs.attunedev.org
@@ -435,7 +449,7 @@ entries:
     version: 0.1.2
   - apiVersion: v2
     appVersion: 0.1.0
-    created: "2026-10-30T08:00:42.478748677-05:00"
+    created: "2026-11-11T16:22:50.522470801-06:00"
     description: Public documentation site for Attune
     digest: fa9bc33bff5027a360f4678a05930774dec44d52893ecb1cae7e70e3de743f8c
     home: https://docs.attunedev.org
@@ -448,7 +462,7 @@ entries:
     version: 0.1.1
   - apiVersion: v2
     appVersion: 0.1.0
-    created: "2026-10-30T08:00:42.478401377-05:00"
+    created: "2026-11-11T16:22:50.522085741-06:00"
     description: Public documentation site for Attune
     digest: ece8f8de35fe4b4c851cc2a2dbfa53dc12f4d71e9572d9570f82288470c44b37
     home: https://docs.attunedev.org
@@ -462,7 +476,7 @@ entries:
   attune-site:
   - apiVersion: v2
     appVersion: 0.1.6
-    created: "2026-10-30T08:00:42.485073786-05:00"
+    created: "2026-11-11T16:22:50.564705322-06:00"
     description: Public website for Attune
     digest: ff46167ccbb41d0d9daab98838031c2cdeca0a4bdcaaea07ea04482dc286eab9
     home: https://attunedev.org
@@ -475,7 +489,7 @@ entries:
     version: 0.1.7
   - apiVersion: v2
     appVersion: 0.1.5
-    created: "2026-10-30T08:00:42.484576096-05:00"
+    created: "2026-11-11T16:22:50.564233436-06:00"
     description: Public website for Attune
     digest: a1f20de108ab49562e4fecfd75a67e239fc97a39c0f0b037bbbd4ae0ad9aaf1c
     home: https://attunedev.org
@@ -488,7 +502,7 @@ entries:
     version: 0.1.6
   - apiVersion: v2
     appVersion: 0.1.4
-    created: "2026-10-30T08:00:42.484085617-05:00"
+    created: "2026-11-11T16:22:50.563448825-06:00"
     description: Public website for Attune
     digest: 1fd5843ca2062dcec60aa36a884a67801325c345e18f3049ccd9fcda8273b188
     home: https://attunedev.org
@@ -501,7 +515,7 @@ entries:
     version: 0.1.5
   - apiVersion: v2
     appVersion: 0.1.3
-    created: "2026-10-30T08:00:42.483599292-05:00"
+    created: "2026-11-11T16:22:50.562340169-06:00"
     description: Public website for Attune
     digest: dd23468e6abd21f86980add6fbc6b60074b0e72b9e34498cf3b3678f76a0571c
     home: https://attunedev.org
@@ -514,7 +528,7 @@ entries:
     version: 0.1.4
   - apiVersion: v2
     appVersion: 0.1.2
-    created: "2026-10-30T08:00:42.483100412-05:00"
+    created: "2026-11-11T16:22:50.561771664-06:00"
     description: Public website for Attune
     digest: a4c92d4d4ee2ffcc8f9fa7c79d2b3119e995d745c0b4ec8fb3aa1573165efb92
     home: https://attunedev.org
@@ -527,7 +541,7 @@ entries:
     version: 0.1.3
   - apiVersion: v2
     appVersion: 0.1.1
-    created: "2026-10-30T08:00:42.482583757-05:00"
+    created: "2026-11-11T16:22:50.561264837-06:00"
     description: Public website for Attune
     digest: 86422f8e239409b4f3a143bb1a770aa42f5dd8f7bb6ed006be80f8744c6e70b8
     home: https://attunedev.org
@@ -540,7 +554,7 @@ entries:
     version: 0.1.2
   - apiVersion: v2
     appVersion: 0.1.0
-    created: "2026-10-30T08:00:42.482095139-05:00"
+    created: "2026-11-11T16:22:50.560744934-06:00"
     description: Public website for Attune
     digest: 02fe2c58ec080177f22c5350eff66ccfcbd1e908ed1f24f53f25ce08bb605a5b
     home: https://attunedev.org
@@ -553,7 +567,7 @@ entries:
     version: 0.1.1
   - apiVersion: v2
     appVersion: 0.1.0
-    created: "2026-10-30T08:00:42.481614688-05:00"
+    created: "2026-11-11T16:22:50.560224137-06:00"
     description: Public website for Attune
     digest: 7cf8b5d2a2c1f6ee3aa0a091e90029b1dd72b8a19e83a2a21dfd8eb5191bf09b
     home: https://attunedev.org
@@ -564,4 +578,4 @@ entries:
     urls:
     - packages/attune-site-0.1.0.tgz
     version: 0.1.0
-generated: "2026-11-09T07:56:59.489727625-06:00"
+generated: "2026-11-11T16:22:50.327017693-06:00"
