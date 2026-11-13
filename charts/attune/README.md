@@ -1007,11 +1007,15 @@ helper must explicitly send scalar multipart `absent_metadata_policy=remove`
 when activating core `1.0.7`. This policy applies across the pack and has no
 component selector. The coordinated candidate and publisher must retire core
 action callables other than `echo`, `sleep` and `noop` while preserving unrelated
-metadata, runtimes, sensors and IAM sets. PR 41 retains every non-action component
-definition byte-identical, including `core.key_creator` despite removal of its SSH
-action. Only the eight omitted action refs should newly retire. Upstream regression
-evidence must compare retained non-action projection IDs/lifecycle, preserve the
-pinned old release, and reject new lookup/execution of removed actions. This
+metadata, runtimes, sensors, IAM sets and dashboards. Retained unrelated component
+definitions remain byte-identical, including `core.key_creator` despite removal
+of its SSH action. Scalar Remove retires the eight omitted action refs and also
+`install_packs`'s own `workflow_definition` child. This owning-workflow retirement
+is the explicit exception to preserving non-action projections; it does not
+permit broader unrelated metadata removal. Upstream regression evidence must
+compare retained unrelated projection IDs/lifecycle, verify retirement of that
+owning workflow child, preserve the pinned old release, and reject new
+lookup/execution of removed actions. This
 preservation does not narrow the scalar policy. Capture the actual API request,
 before/after inventories and failure preservation evidence in owned acceptance
 tests. The chart's version/digest health checks alone cannot prove this removal

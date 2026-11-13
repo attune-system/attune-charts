@@ -68,10 +68,14 @@ The chart calls the bundled `publish_core` helper without constructing the API
 payload. Verify that helper explicitly sends scalar multipart `absent_metadata_policy=remove`.
 The policy applies across the pack, with no component selector. Verify that
 activation retires every other core action callable while leaving unrelated
-metadata, runtimes, sensors and IAM sets unchanged. PR 41 retains all non-action component definitions byte-identical, including
-`core.key_creator`; only eight omitted action refs should newly retire. Require
-regression evidence for retained projection IDs/lifecycle, pinned old-release
-preservation and denied new lookup/execution of removed actions. This does not
+metadata, runtimes, sensors, IAM sets and dashboards unchanged. Retained unrelated
+component definitions remain byte-identical, including `core.key_creator`.
+Scalar Remove retires eight omitted action refs plus `install_packs`'s own
+`workflow_definition` child. This owning-workflow retirement is the explicit
+non-action projection exception; broader unrelated removal is not intended.
+Require regression evidence for retained unrelated projection IDs/lifecycle,
+retired owning workflow child, pinned old-release preservation and denied new
+lookup/execution of removed actions. This does not
 make the scalar policy action-only.
 Record request, resulting inventory, idempotent rerun and failed-upgrade
 preservation evidence. Offline Helm/adapter tests prove pins and delegation;
