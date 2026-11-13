@@ -1,4 +1,4 @@
-"""Offline source contracts only. Helm rendering and cluster acceptance are central."""
+"""Offline pin/render/package contracts; no image compatibility or live proof."""
 from pathlib import Path
 import hashlib
 import subprocess
@@ -36,6 +36,59 @@ class Pins(unittest.TestCase):
                    and doc["spec"]["template"]["metadata"]["labels"].get("app.kubernetes.io/component") == "api")
         self.assertEqual(api["spec"]["template"]["spec"]["containers"][0]["image"],
                          "ghcr.io/attune-system/attune/api:fixture-platform")
+
+    def test_staged_core_pins_preserve_explicit_injected_agent_override(self):
+        # Deliberately synthetic, offline-only image bytes; this is selection
+        # plumbing, never evidence of a published or compatible agent image.
+        agent_digest = "sha256:" + "b" * 64
+        with tempfile.TemporaryDirectory(prefix="attune-staged-pins-") as directory:
+            values_path = Path(directory) / "values.yaml"
+            for mode in ("sharedVolume", "object"):
+                for upgrade, version, required in ((True, "1.0.5", False),
+                                                    (True, "1.0.7", False),
+                                                    (True, "1.0.7", True),
+                                                    (False, "1.0.7", False)):
+                    with self.subTest(mode=mode, upgrade=upgrade, core=version, required=required):
+                        pack_image_digest = "sha256:" + "c" * 64
+                        archive_digest = "a" * 64
+                        values_path.write_text(yaml.safe_dump({
+                            "security": {"existingSecret": "fixture-runtime"},
+                            "storage": {"mode": mode, "object": {"bucket": "fixture-bucket",
+                                        "region": "us-east-1", "endpoint": "https://storage.invalid"}},
+                            "images": {"agent": {"repository": "fixture-agent",
+                                                  "digest": agent_digest},
+                                       "initPacks": {"tag": "core-" + version, "digest": pack_image_digest}},
+                            "corePack": {"version": version, "digest": archive_digest,
+                                         "requiredOnUpgrade": required},
+                        }))
+                        command = ["helm", "template", "staged", str(ROOT / "charts/attune"),
+                                   "--values", str(values_path)]
+                        if upgrade:
+                            command.append("--is-upgrade")
+                        rendered = subprocess.run(command, check=True, capture_output=True,
+                                                  text=True, timeout=30).stdout
+                        docs = [doc for doc in yaml.safe_load_all(rendered) if doc]
+                        pools = [doc for doc in docs if doc["kind"] == "Deployment"
+                                 and doc["metadata"]["labels"].get("app.kubernetes.io/component", "").startswith(
+                                     ("action-worker-", "sensor-worker-"))]
+                        self.assertEqual(len(pools), 2)
+                        for pool in pools:
+                            pod = pool["spec"]["template"]["spec"]
+                            agent = next(item for item in pod["initContainers"] if item["name"] == "init-agent")
+                            self.assertEqual(agent["image"], "ghcr.io/attune-system/fixture-agent@" + agent_digest)
+                            self.assertEqual(pod["containers"][0]["command"][0], "/opt/attune/agent/attune-agent"
+                                             if pod["containers"][0]["name"] == "worker"
+                                             else "/opt/attune/agent/attune-sensor-agent")
+                        job = next(doc for doc in docs if doc["kind"] == "Job"
+                                   and doc["metadata"]["labels"].get("app.kubernetes.io/component") == "init-packs")
+                        expected_hook = "post-upgrade" if upgrade and required else None if upgrade else "post-install"
+                        self.assertEqual(job["metadata"].get("annotations", {}).get("helm.sh/hook"), expected_hook)
+                        container = job["spec"]["template"]["spec"]["containers"][0]
+                        self.assertEqual(container["image"], "ghcr.io/attune-system/attune/init-packs@" + pack_image_digest)
+                        env = {entry["name"]: entry.get("value") for entry in container["env"]}
+                        self.assertEqual(env["ATTUNE_CORE_PACK_VERSION"], version)
+                        self.assertEqual(env["ATTUNE_CORE_PACK_DIGEST"], archive_digest)
+                        self.assertEqual(env["ATTUNE_BOOTSTRAP_MODE"], "api")
 
     def test_packaged_bytes_match_source_and_index_digest(self):
         chart_dir = ROOT / "charts/attune"

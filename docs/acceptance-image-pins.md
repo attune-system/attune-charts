@@ -25,6 +25,22 @@ fresh/failed-upgrade/rollback matrix remain explicit central responsibilities.
 These offline checks start no cluster workloads and do not prove live admission.
 
 The chart defaults to platform `0.10.4`, independently from core `1.0.7`.
+This draft default combination is not deployable: stock `0.10.4` workers cannot
+execute native directories, even though they advertise `native`. No compatible
+immutable worker/agent image has been selected. Require an actual measured
+`images.agent` override (the injected executable source in this chart), compatible
+API/worker code, and fresh-install execution evidence before core activation.
+Changing only a pool's runtime-container image does not replace its injected agent.
+Prefer a coordinated platform release once actual versions/images exist. Keep
+this PR draft until that concrete image selection is established.
+
+For upgrades, first roll compatible worker/agent code with all OLD core version,
+archive digest and init-packs tag/digest pins preserved in the existing config.
+Wait for workers to roll, old workers to drain/terminate and dispatch eligibility
+to be verified; test old-core execution on the new workers. Only then activate
+core `1.0.7` with those compatible worker pins retained. Optional publication Jobs
+can race worker rollout; required post-upgrade hooks gate the API, not worker
+versions or drainage. See the [inspected hook ordering and staged rollout](../charts/attune/README.md#native-core-107-worker-compatibility).
 Older `0.8.0` platform images cannot satisfy this bootstrap contract.
 The API must advertise `pack_publication` on `/health/ready` with integer
 protocol/client versions `1`, revision `authenticated-pack-publication-1`,
@@ -52,7 +68,7 @@ The chart calls the bundled `publish_core` helper without constructing the API
 payload. Verify that helper explicitly sends scalar multipart `absent_metadata_policy=remove`.
 The policy applies across the pack, with no component selector. Verify that
 activation retires every other core action callable while leaving unrelated
-metadata, runtimes, sensors and IAM sets unchanged. PR 41 retains all non-action YAML definitions byte-identical, including
+metadata, runtimes, sensors and IAM sets unchanged. PR 41 retains all non-action component definitions byte-identical, including
 `core.key_creator`; only eight omitted action refs should newly retire. Require
 regression evidence for retained projection IDs/lifecycle, pinned old-release
 preservation and denied new lookup/execution of removed actions. This does not

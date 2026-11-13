@@ -282,6 +282,9 @@ images:
     digest: ""
     tag: "core-1.0.7"
     pullPolicy: IfNotPresent
+  # Draft compatibility gate: stock 0.10.4 agent lacks native directory selection.
+  # Before core 1.0.7 activation, supply an actual compatible immutable image;
+  # no compatible tag/digest is asserted here. See README staged rollout.
   agent:
     repository: attune/agent
     digest: ""

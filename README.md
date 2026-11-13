@@ -38,7 +38,13 @@ https://github.com/attune-system/attune-charts.git
 ## Install a chart
 
 Chart `0.10.5` targets Attune `0.10.4` and the independently pinned core pack
-`1.0.7`. Supply an existing registrar-authorized deployment token in the Secret
+`1.0.7`. **This draft's stock defaults are not a deployable combination:** stock
+`0.10.4` workers cannot execute native directory entrypoints. Fresh installs and
+upgrades require an actual immutable compatible worker/agent image selection
+before activating core `1.0.7`; no compatible pin is supplied yet. Prefer alignment
+with a coordinated platform release when its real version/images exist. See the
+[worker compatibility and staged rollout](charts/attune/README.md#native-core-107-worker-compatibility)
+requirements. Supply an existing registrar-authorized deployment token in the Secret
 selected by `corePack.deploymentTokenSecret` and `corePack.deploymentTokenKey`.
 See the [chart bootstrap requirements](charts/attune/README.md) and
 [acceptance image inputs](docs/acceptance-image-pins.md). Do not enable the
