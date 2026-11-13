@@ -280,7 +280,7 @@ images:
   initPacks:
     repository: attune/init-packs
     digest: ""
-    tag: "core-1.0.5"
+    tag: "core-1.0.7"
     pullPolicy: IfNotPresent
   agent:
     repository: attune/agent
@@ -293,7 +293,7 @@ corePack:
   # Empty secret name uses security.existingSecret/the chart security secret.
   deploymentTokenSecret: ""
   deploymentTokenKey: ATTUNE_BOOTSTRAP_TOKEN
-  version: "1.0.5"
+  version: "1.0.7"
   # Pin the actual immutable release archive only after packaging native binaries.
   # A source-only tarball or container-image digest is not this digest.
   digest: ""

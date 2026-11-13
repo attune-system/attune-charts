@@ -5,7 +5,7 @@ publishes charts for the Attune platform and its public sites.
 
 | Chart | Version | Purpose |
 | --- | --- | --- |
-| `attune` | `0.10.4` | Attune services, workers, PostgreSQL, and RabbitMQ |
+| `attune` | `0.10.5` | Attune services, workers, PostgreSQL, and RabbitMQ |
 | `attune-site` | `0.1.7` | `attunedev.org` and its inquiry form |
 | `attune-docs-site` | `0.1.6` | `docs.attunedev.org` |
 
@@ -37,8 +37,8 @@ https://github.com/attune-system/attune-charts.git
 
 ## Install a chart
 
-Chart `0.10.4` targets Attune `0.10.4` and the independently pinned core pack
-`1.0.5`. Supply an existing registrar-authorized deployment token in the Secret
+Chart `0.10.5` targets Attune `0.10.4` and the independently pinned core pack
+`1.0.7`. Supply an existing registrar-authorized deployment token in the Secret
 selected by `corePack.deploymentTokenSecret` and `corePack.deploymentTokenKey`.
 See the [chart bootstrap requirements](charts/attune/README.md) and
 [acceptance image inputs](docs/acceptance-image-pins.md). Do not enable the
@@ -75,7 +75,7 @@ This mode creates `attune-setup/namespace.yaml`, `secrets.yaml`,
 commands in order. Install the CloudNativePG operator before applying the
 generated `postgresql.yaml`.
 
-Chart `0.10.4` targets Attune `0.10.4` without the TimescaleDB dependency.
+Chart `0.10.5` targets Attune `0.10.4` without the TimescaleDB dependency.
 Use it for fresh native PostgreSQL installations. Upgrades refuse a database
 with the TimescaleDB extension before provisioning, migrations, or StatefulSet
 changes. Converting populated TimescaleDB installations is not supported.

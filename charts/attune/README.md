@@ -11,8 +11,8 @@ This chart installs the Attune platform, including these components:
 The chart defaults target a small single-node k3s cluster. All platform
 Deployments use one replica, and shared claims use `ReadWriteOnce`.
 
-Chart `0.10.4` targets Attune `0.10.4` and core pack `1.0.5`, using the
-independently versioned `core-1.0.5` init-packs image. API, executor, notifier,
+Chart `0.10.5` targets Attune `0.10.4` and core pack `1.0.7`, using the
+independently versioned `core-1.0.7` init-packs image. API, executor, notifier,
 supervisor, web, and injected agent images inherit `global.imageTag` unless
 explicitly overridden. Keep API and agent images aligned.
 
@@ -923,7 +923,7 @@ registrar checks or creates a deployment credential.
 
 Leave `corePack.digest` empty until the exact packaged release archive is
 available. The digest must be SHA-256 of the canonical immutable `pack.tar.gz`,
-including the real native timer binaries for both architectures. It is not an
+including the native core action binaries for both architectures. It is not an
 OCI image digest or the Python publisher's source-upload tarball hash. The
 application publish workflow derives the `core-<version>` tag from the shipped
 pack manifest; it does not supply a release-archive digest here. Obtain that
@@ -937,9 +937,37 @@ agent. Verify the live publication contract above and the init-packs image's
 `/scripts/bootstrap_core_pack.py` exports `BOOTSTRAP_CLIENT_VERSION=1`,
 `BOOTSTRAP_REVISION=authenticated-pack-publication-1`, `BOOTSTRAP_COMPONENTS`
 equal to the two components, and callable `publish_core`. The image must provide
-Python 3, PyYAML, core `1.0.5` metadata and both architectures' native timer binaries.
+Python 3 and PyYAML for publication only, core `1.0.7` metadata, and musl-linked
+AMD64/ARM64 binaries for `core.echo`, `core.sleep` and `core.noop`. These three
+actions must run directly in native full worker pools without Python or shell
+prerequisites; the chart adds no action interpreters.
 Record the canonical release-archive checksum separately from its image digest.
 Supply an existing registrar-authorized integration token in the selected Secret.
+
+Core `1.0.7` is a coordinated dependency on
+[Attune PR 41](https://github.com/attune-system/attune/pull/41), not evidence that
+`init-packs:core-1.0.7` has been published. Keep the chart PR draft until compatible
+API/worker/agent code and measured init-packs artifacts are available. Verify
+entrypoint selection from `actions/bin/{echo,sleep,noop}/{linux-amd64,linux-arm64}`
+and record actual native action execution evidence before installation. Official
+init-packs artifacts must include both architectures. The existing Python publisher
+and files-manifest v1 remain the publication path.
+
+The chart delegates the deployment payload to the image's `publish_core(base,
+pack_dir)` helper; it does not set metadata removal policy itself. The bundled
+helper must explicitly send scalar multipart `absent_metadata_policy=remove`
+when activating core `1.0.7`. This policy applies across the pack and has no
+component selector. The coordinated candidate and publisher must retire core
+action callables other than `echo`, `sleep` and `noop` while preserving unrelated
+metadata, runtimes, sensors and IAM sets. PR 41 retains every non-action YAML
+definition byte-identical, including `core.key_creator` despite removal of its SSH
+action. Only the eight omitted action refs should newly retire. Upstream regression
+evidence must compare retained non-action projection IDs/lifecycle, preserve the
+pinned old release, and reject new lookup/execution of removed actions. This
+preservation does not narrow the scalar policy. Capture the actual API request,
+before/after inventories and failure preservation evidence in owned acceptance
+tests. The chart's version/digest health checks alone cannot prove this removal
+contract. Optional utility actions are deferred to a separate pack.
 
 Use owned acceptance infrastructure to prove fresh publication, idempotent rerun,
 denial and failed-upgrade preservation of prior release/policy/configuration in
