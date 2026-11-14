@@ -1008,6 +1008,12 @@ with the correct machine type and no `PT_INTERP` or `DT_NEEDED`; the API-mode
 publisher must validate them before upload with no source fallback. The existing
 Python publisher and files-manifest v1 remain the publication path.
 
+A hash-verified local producer receipt marked `BUILT_NOT_DEPLOYED` proves only
+its recorded source/artifact bytes. A receipt built before the combined post-PR54
+source is not combined acceptance evidence, an official registry/image pin or
+proof of native execution/deployment. Require artifacts from the actual combined
+source, including the explicit admin-policy update, before satisfying these gates.
+
 Core version `1.0.7` is provisional pending coordinator artifact/version decisions.
 There is no positive publication evidence here. The coordinator's anonymous GHCR
 probe returned 404 and package API returned 403 (read-packages access); neither
@@ -1022,9 +1028,17 @@ helper must explicitly send scalar multipart `absent_metadata_policy=remove`
 when activating core `1.0.7`. This policy applies across the pack and has no
 component selector. The coordinated candidate and publisher must retire core
 action callables other than `echo`, `sleep`, `noop` and `http_request` while
-preserving unrelated metadata, runtimes, sensors, IAM sets and dashboards. Retained unrelated component
-definitions remain byte-identical, including `core.key_creator` despite removal
-of its SSH action. Scalar Remove retires the seven omitted action refs and also
+preserving unrelated metadata, runtimes, sensors, IAM sets and dashboards.
+Use post-PR54 application main `1a83c7cb5a4e855b7cb331e85464337bfd0abd9a`
+as the preservation baseline. PR54 deliberately adds `identities:manage` to
+`core.admin` and platformadmin (permission catalog 4, epoch 1); this explicit
+security-policy change is an exception when comparing with older baselines,
+not permission for broader IAM changes. Its admin-only core `1.0.6` source
+release does not establish official artifact publication. PR41 integrates that
+policy into four-action core `1.0.7` with timer `0.7.5`. All unrelated component
+definitions remain byte-identical to the preservation baseline, including
+`core.key_creator` despite removal of its SSH action; preserve their projection
+IDs, lifecycle and historical release pins. Scalar Remove retires the seven omitted action refs and also
 `install_packs`'s own `workflow_definition` child. This owning-workflow retirement
 is the explicit exception to preserving non-action projections; it does not
 permit broader unrelated metadata removal. Upstream regression evidence must

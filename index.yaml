@@ -3,9 +3,9 @@ entries:
   attune:
   - apiVersion: v2
     appVersion: 0.10.4
-    created: "2026-11-14T06:50:18.752870821-06:00"
+    created: "2026-11-14T14:56:49.296018863-06:00"
     description: Helm chart for deploying the Attune automation platform
-    digest: d106deef8b5fb3ce8f414144e773725577c13fe55e733339600f93ae847bb295
+    digest: c2d4476a6000c1c713e17608a6622518bb8c3afc8641460ba675750718047516
     home: https://github.com/attune-system/attune
     icon: https://avatars.githubusercontent.com/u/284962476?s=200&v=4
     name: attune

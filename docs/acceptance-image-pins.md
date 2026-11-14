@@ -76,12 +76,26 @@ No positive existing publication evidence is known here. If an immutable `1.0.7`
 artifact exists, report its exact digest before version reuse; never overwrite
 it or invent a new tag. Actual compatible image pins are still required.
 
+Hash-verified local `BUILT_NOT_DEPLOYED` producer receipts establish only their
+recorded source/artifact bytes. Pre-combined-source receipts cannot stand in for
+post-PR54 combined acceptance, an official compatible registry/image pin, native
+HTTP execution or rollout/deployment evidence. Match receipts to the actual
+combined source including the explicit admin-policy change; retain the old-core
+first rollout/drainage gates.
+
 The chart calls the bundled `publish_core` helper without constructing the API
 payload. Verify that helper explicitly sends scalar multipart `absent_metadata_policy=remove`.
 The policy applies across the pack, with no component selector. Verify that
 activation retires every other core action callable while leaving unrelated
 metadata, runtimes, sensors, IAM sets and dashboards unchanged. Retained unrelated
-component definitions remain byte-identical, including `core.key_creator`.
+component definitions remain byte-identical against post-PR54 application main
+`1a83c7cb5a4e855b7cb331e85464337bfd0abd9a`, including `core.key_creator`.
+When comparing older baselines, explicitly allow PR54's `identities:manage`
+addition to `core.admin` and platformadmin (catalog 4, epoch 1), not broader IAM
+changes. Core `1.0.6` was an admin-only source release, not evidence of official
+publication; PR41 integrates that policy into four-action core `1.0.7`/timer
+`0.7.5`. Preserve all unrelated definition bytes, projection IDs/lifecycle and
+historical release pins.
 Scalar Remove retires seven omitted action refs plus `install_packs`'s own
 `workflow_definition` child. This owning-workflow retirement is the explicit
 non-action projection exception; broader unrelated removal is not intended.
