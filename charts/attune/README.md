@@ -11,10 +11,13 @@ This chart installs the Attune platform, including these components:
 The chart defaults target a small single-node k3s cluster. All platform
 Deployments use one replica, and shared claims use `ReadWriteOnce`.
 
-Chart `0.10.4` targets Attune `0.10.4` and core pack `1.0.5`, using the
-independently versioned `core-1.0.5` init-packs image. API, executor, notifier,
+Chart `0.10.5` targets Attune `0.10.4` and core pack `1.0.7`, using the
+independently versioned `core-1.0.7` init-packs image. API, executor, notifier,
 supervisor, web, and injected agent images inherit `global.imageTag` unless
-explicitly overridden. Keep API and agent images aligned.
+explicitly overridden. Keep API and agent images aligned. **Stock `0.10.4` worker
+code cannot execute core `1.0.7` native directory entrypoints. These draft defaults
+are not deployable without an actual compatible immutable worker/agent override.**
+See [worker compatibility](#native-core-107-worker-compatibility) before installation.
 
 Pack publication requires an existing registrar-authorized deployment token in
 the Secret selected by `corePack.deploymentTokenSecret` and
@@ -891,6 +894,51 @@ automatic rollback to `sharedVolume`. Stop writes first, then use a tested
 reverse migration or restore the pre-cutover database and PVC backups as one
 consistent set.
 
+### Native core 1.0.7 worker compatibility
+
+Native directory selection is new worker code from PR 41. Stock `0.10.4` workers
+advertise `native` but cannot execute directory entrypoints; runtime advertisement
+is not evidence of directory support. This draft keeps `appVersion` and platform
+tags at `0.10.4` only as metadata, paired with a requirement for an actual compatible
+immutable worker/agent override before activation. No compatible image selection
+is known yet, so this PR must remain draft and its defaults must not be deployed.
+Prefer coordinated platform release alignment once real versioned images exist;
+do not invent a tag/digest or silently retag every platform component.
+
+In this chart, `images.agent` selects the `init-agent` image that copies the worker
+executable into every action/sensor pool. Set its repository and actual measured
+OCI `digest` to compatible code. Changing only `actionWorkers[].image` changes the
+runtime container, not the injected worker executable. Verify all eligible pools
+and any external workers use compatible code, with compatible API contracts and
+retained old-core execution behavior. A successful render or health check does not
+establish binary compatibility. Fresh installs also require this real image
+selection before publication; old-core staging is not a substitute for it.
+
+Upgrade in two stages using the existing configuration, without changing storage,
+runtime, sensor or IAM settings:
+
+1. Keep the currently admitted OLD core release: preserve its `corePack.version`,
+   `corePack.digest`, `images.initPacks.tag` and `images.initPacks.digest`. Roll out
+   the verified compatible `images.agent` override and any explicitly required
+   compatible service images. Wait for all worker rollouts to complete, old Pods
+   to terminate, and old/external workers to drain or be removed from dispatch.
+   Verify old-core execution on the new code before proceeding.
+2. Retain those compatible worker pins, then select core `1.0.7` and its actual
+   compatible init-packs artifact, using measured image/archive digests when
+   available. Verify native execution and the removal/preservation inventories.
+
+This sequence matters in both storage modes. Optional upgrade publication is an
+ordinary Job that can run concurrently with worker rollout; `--wait` or
+`--wait-for-jobs` does not make that Job start after workers drain. Required
+publication (`corePack.requiredOnUpgrade=true`) runs at post-upgrade hook weight
+0, with content readiness at weight 10. Helm `--wait` can wait for ordinary
+resource readiness before post hooks, but neither the adapter nor hook ordering
+checks worker binary versions, dispatch eligibility or completed drainage. Without
+`--wait`, post hooks can also precede worker readiness. Fresh publication uses
+post-install weight 0, then content readiness weight 10. The adapter only waits
+for the revision-specific API's `/health/ready`; it never waits for workers.
+Do not rely on a single combined worker/core upgrade to establish compatibility.
+
 Fresh installs run core pack bootstrap as a blocking `post-install` hook. On an
 upgrade in either storage mode, bootstrap is an ordinary Job. A failed admission
 is recorded as a failed Job and must keep the prior admitted core release through
@@ -923,7 +971,7 @@ registrar checks or creates a deployment credential.
 
 Leave `corePack.digest` empty until the exact packaged release archive is
 available. The digest must be SHA-256 of the canonical immutable `pack.tar.gz`,
-including the real native timer binaries for both architectures. It is not an
+including the native core action binaries for both architectures. It is not an
 OCI image digest or the Python publisher's source-upload tarball hash. The
 application publish workflow derives the `core-<version>` tag from the shipped
 pack manifest; it does not supply a release-archive digest here. Obtain that
@@ -937,9 +985,70 @@ agent. Verify the live publication contract above and the init-packs image's
 `/scripts/bootstrap_core_pack.py` exports `BOOTSTRAP_CLIENT_VERSION=1`,
 `BOOTSTRAP_REVISION=authenticated-pack-publication-1`, `BOOTSTRAP_COMPONENTS`
 equal to the two components, and callable `publish_core`. The image must provide
-Python 3, PyYAML, core `1.0.5` metadata and both architectures' native timer binaries.
+Python 3 and PyYAML for publication only, core `1.0.7` metadata, and musl-linked
+AMD64/ARM64 binaries for exactly four native actions: `core.echo`, `core.sleep`,
+`core.noop` and `core.http_request` (eight ELF payloads total). All four must run
+directly in native full worker pools without curl, Python or shell action-runtime
+prerequisites; the chart adds no action interpreters. Native HTTP implementation,
+mocks, required CI and review remain pending upstream; this inventory requirement
+is not evidence of working HTTP execution or TLS deployment.
 Record the canonical release-archive checksum separately from its image digest.
 Supply an existing registrar-authorized integration token in the selected Secret.
+
+Core `1.0.7` is a coordinated dependency on
+[Attune PR 41](https://github.com/attune-system/attune/pull/41), not evidence that
+`init-packs:core-1.0.7` has been published. Keep the chart PR draft until compatible
+API/worker/agent code and measured init-packs artifacts are available. Verify
+entrypoint selection from
+`actions/bin/{echo,sleep,noop,http_request}/{linux-amd64,linux-arm64}`
+(the HTTP entrypoint remains subject to the final owner contract)
+and record actual native action execution evidence before installation. Official
+init-packs artifacts must include all eight executable static musl ELF payloads,
+with the correct machine type and no `PT_INTERP` or `DT_NEEDED`; the API-mode
+publisher must validate them before upload with no source fallback. The existing
+Python publisher and files-manifest v1 remain the publication path.
+
+A hash-verified local producer receipt marked `BUILT_NOT_DEPLOYED` proves only
+its recorded source/artifact bytes. A receipt built before the combined post-PR54
+source is not combined acceptance evidence, an official registry/image pin or
+proof of native execution/deployment. Require artifacts from the actual combined
+source, including the explicit admin-policy update, before satisfying these gates.
+
+Core version `1.0.7` is provisional pending coordinator artifact/version decisions.
+There is no positive publication evidence here. The coordinator's anonymous GHCR
+probe returned 404 and package API returned 403 (read-packages access); neither
+establishes absence of a private immutable release. If an existing immutable
+`1.0.7` artifact is found, record its exact digest and resolve version reuse with
+the coordinator before publication. Do not overwrite an immutable release or
+invent a replacement tag.
+
+The chart delegates the deployment payload to the image's `publish_core(base,
+pack_dir)` helper; it does not set metadata removal policy itself. The bundled
+helper must explicitly send scalar multipart `absent_metadata_policy=remove`
+when activating core `1.0.7`. This policy applies across the pack and has no
+component selector. The coordinated candidate and publisher must retire core
+action callables other than `echo`, `sleep`, `noop` and `http_request` while
+preserving unrelated metadata, runtimes, sensors, IAM sets and dashboards.
+Use post-PR54 application main `1a83c7cb5a4e855b7cb331e85464337bfd0abd9a`
+as the preservation baseline. PR54 deliberately adds `identities:manage` to
+`core.admin` and platformadmin (permission catalog 4, epoch 1); this explicit
+security-policy change is an exception when comparing with older baselines,
+not permission for broader IAM changes. Its admin-only core `1.0.6` source
+release does not establish official artifact publication. PR41 integrates that
+policy into four-action core `1.0.7` with timer `0.7.5`. All unrelated component
+definitions remain byte-identical to the preservation baseline, including
+`core.key_creator` despite removal of its SSH action; preserve their projection
+IDs, lifecycle and historical release pins. Scalar Remove retires the seven omitted action refs and also
+`install_packs`'s own `workflow_definition` child. This owning-workflow retirement
+is the explicit exception to preserving non-action projections; it does not
+permit broader unrelated metadata removal. Upstream regression evidence must
+compare retained unrelated projection IDs/lifecycle, verify retirement of that
+owning workflow child, preserve the pinned old release, and reject new
+lookup/execution of removed actions. This
+preservation does not narrow the scalar policy. Capture the actual API request,
+before/after inventories and failure preservation evidence in owned acceptance
+tests. The chart's version/digest health checks alone cannot prove this removal
+contract. Optional utility actions are deferred to a separate pack.
 
 Use owned acceptance infrastructure to prove fresh publication, idempotent rerun,
 denial and failed-upgrade preservation of prior release/policy/configuration in

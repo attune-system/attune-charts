@@ -280,8 +280,11 @@ images:
   initPacks:
     repository: attune/init-packs
     digest: ""
-    tag: "core-1.0.5"
+    tag: "core-1.0.7"
     pullPolicy: IfNotPresent
+  # Draft compatibility gate: stock 0.10.4 agent lacks native directory selection.
+  # Before core 1.0.7 activation, supply an actual compatible immutable image;
+  # no compatible tag/digest is asserted here. See README staged rollout.
   agent:
     repository: attune/agent
     digest: ""
@@ -293,7 +296,7 @@ corePack:
   # Empty secret name uses security.existingSecret/the chart security secret.
   deploymentTokenSecret: ""
   deploymentTokenKey: ATTUNE_BOOTSTRAP_TOKEN
-  version: "1.0.5"
+  version: "1.0.7"
   # Pin the actual immutable release archive only after packaging native binaries.
   # A source-only tarball or container-image digest is not this digest.
   digest: ""
