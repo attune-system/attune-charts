@@ -60,9 +60,21 @@ Core `1.0.7` depends on [Attune PR 41](https://github.com/attune-system/attune/p
 and measured compatible `init-packs:core-1.0.7` artifacts. The tag is a desired
 input, not publication evidence. Retain a draft until that evidence exists.
 Publication Python/PyYAML stays inside init-packs; native full worker pools need
-no added Python or shell prerequisites for `core.echo`, `core.sleep`, `core.noop`.
-Verify the image includes the matching binary-directory entrypoints and both
-musl architectures, then execute all three actions on owned workers.
+no added curl, Python or shell action-runtime prerequisites for exactly four native
+actions: `core.echo`, `core.sleep`, `core.noop`, `core.http_request`. Require eight
+executable static musl ELF payloads (AMD64 and ARM64 for each action), correct
+machine types, no `PT_INTERP`/`DT_NEEDED`, and pre-upload API-mode validation with
+no source fallback. Expected entrypoints are
+`actions/bin/{echo,sleep,noop,http_request}/{linux-amd64,linux-arm64}`, subject to
+the final HTTP owner contract. Execute all four actions on owned compatible
+workers; native HTTP implementation/mocks/CI/review and execution proof remain
+pending. These requirements do not establish HTTP or TLS deployment readiness.
+
+Version `1.0.7` remains provisional under coordinator ownership. Anonymous GHCR
+404 and package API 403 (read-packages access) are not proof of private absence.
+No positive existing publication evidence is known here. If an immutable `1.0.7`
+artifact exists, report its exact digest before version reuse; never overwrite
+it or invent a new tag. Actual compatible image pins are still required.
 
 The chart calls the bundled `publish_core` helper without constructing the API
 payload. Verify that helper explicitly sends scalar multipart `absent_metadata_policy=remove`.
@@ -70,7 +82,7 @@ The policy applies across the pack, with no component selector. Verify that
 activation retires every other core action callable while leaving unrelated
 metadata, runtimes, sensors, IAM sets and dashboards unchanged. Retained unrelated
 component definitions remain byte-identical, including `core.key_creator`.
-Scalar Remove retires eight omitted action refs plus `install_packs`'s own
+Scalar Remove retires seven omitted action refs plus `install_packs`'s own
 `workflow_definition` child. This owning-workflow retirement is the explicit
 non-action projection exception; broader unrelated removal is not intended.
 Require regression evidence for retained unrelated projection IDs/lifecycle,

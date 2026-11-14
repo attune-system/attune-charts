@@ -986,9 +986,12 @@ agent. Verify the live publication contract above and the init-packs image's
 `BOOTSTRAP_REVISION=authenticated-pack-publication-1`, `BOOTSTRAP_COMPONENTS`
 equal to the two components, and callable `publish_core`. The image must provide
 Python 3 and PyYAML for publication only, core `1.0.7` metadata, and musl-linked
-AMD64/ARM64 binaries for `core.echo`, `core.sleep` and `core.noop`. These three
-actions must run directly in native full worker pools without Python or shell
-prerequisites; the chart adds no action interpreters.
+AMD64/ARM64 binaries for exactly four native actions: `core.echo`, `core.sleep`,
+`core.noop` and `core.http_request` (eight ELF payloads total). All four must run
+directly in native full worker pools without curl, Python or shell action-runtime
+prerequisites; the chart adds no action interpreters. Native HTTP implementation,
+mocks, required CI and review remain pending upstream; this inventory requirement
+is not evidence of working HTTP execution or TLS deployment.
 Record the canonical release-archive checksum separately from its image digest.
 Supply an existing registrar-authorized integration token in the selected Secret.
 
@@ -996,20 +999,32 @@ Core `1.0.7` is a coordinated dependency on
 [Attune PR 41](https://github.com/attune-system/attune/pull/41), not evidence that
 `init-packs:core-1.0.7` has been published. Keep the chart PR draft until compatible
 API/worker/agent code and measured init-packs artifacts are available. Verify
-entrypoint selection from `actions/bin/{echo,sleep,noop}/{linux-amd64,linux-arm64}`
+entrypoint selection from
+`actions/bin/{echo,sleep,noop,http_request}/{linux-amd64,linux-arm64}`
+(the HTTP entrypoint remains subject to the final owner contract)
 and record actual native action execution evidence before installation. Official
-init-packs artifacts must include both architectures. The existing Python publisher
-and files-manifest v1 remain the publication path.
+init-packs artifacts must include all eight executable static musl ELF payloads,
+with the correct machine type and no `PT_INTERP` or `DT_NEEDED`; the API-mode
+publisher must validate them before upload with no source fallback. The existing
+Python publisher and files-manifest v1 remain the publication path.
+
+Core version `1.0.7` is provisional pending coordinator artifact/version decisions.
+There is no positive publication evidence here. The coordinator's anonymous GHCR
+probe returned 404 and package API returned 403 (read-packages access); neither
+establishes absence of a private immutable release. If an existing immutable
+`1.0.7` artifact is found, record its exact digest and resolve version reuse with
+the coordinator before publication. Do not overwrite an immutable release or
+invent a replacement tag.
 
 The chart delegates the deployment payload to the image's `publish_core(base,
 pack_dir)` helper; it does not set metadata removal policy itself. The bundled
 helper must explicitly send scalar multipart `absent_metadata_policy=remove`
 when activating core `1.0.7`. This policy applies across the pack and has no
 component selector. The coordinated candidate and publisher must retire core
-action callables other than `echo`, `sleep` and `noop` while preserving unrelated
-metadata, runtimes, sensors, IAM sets and dashboards. Retained unrelated component
+action callables other than `echo`, `sleep`, `noop` and `http_request` while
+preserving unrelated metadata, runtimes, sensors, IAM sets and dashboards. Retained unrelated component
 definitions remain byte-identical, including `core.key_creator` despite removal
-of its SSH action. Scalar Remove retires the eight omitted action refs and also
+of its SSH action. Scalar Remove retires the seven omitted action refs and also
 `install_packs`'s own `workflow_definition` child. This owning-workflow retirement
 is the explicit exception to preserving non-action projections; it does not
 permit broader unrelated metadata removal. Upstream regression evidence must
