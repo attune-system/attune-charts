@@ -157,5 +157,19 @@
         }
       }
     }
+  },
+  "core_archive": {
+    "version": "1.0.7",
+    "timer_version": "0.7.5",
+    "sha256": "82a032962e28cf288a77e23273202e021428550cd655ba2c7776f3a98281e638",
+    "size_bytes": 13565856,
+    "source_revision": "67b2f572a75f5057e1dd5978258fd7910d2564c9",
+    "measurement": "Actual canonical pack.tar.gz read from published0.11.0 API release/cache; matching object-store publication and staged activation in both modes",
+    "native_payload_architectures": [
+      "linux-amd64",
+      "linux-arm64"
+    ],
+    "live_execution_architecture": "linux-amd64",
+    "not_an_OCI_or_source_upload_digest": true
   }
 }

@@ -116,7 +116,7 @@ class HelmTests(unittest.TestCase):
         values = yaml.safe_load((ROOT / "charts/attune/values.yaml").read_text())
         self.assertEqual(values["corePack"]["version"], "1.0.7")
         self.assertEqual(values["images"]["initPacks"]["tag"], "core-" + values["corePack"]["version"])
-        self.assertEqual(values["corePack"]["digest"], "")
+        self.assertEqual(values["corePack"]["digest"], yaml.safe_load((ROOT / "docs/published-images-0.11.0.json").read_text())["core_archive"]["sha256"])
         for path in (ROOT / "charts/attune/values.yaml", ROOT / "scripts/verify.sh"):
             self.assertNotIn("1.0.3", path.read_text())
 

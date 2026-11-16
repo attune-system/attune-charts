@@ -926,6 +926,22 @@ runtime, sensor or IAM settings:
    compatible init-packs artifact, using measured image/archive digests when
    available. Verify native execution and the removal/preservation inventories.
 
+Owned published-source acceptance passed fresh and genuine `0.10.4`/core `1.0.5`
+staged upgrades in both modes, including retirement, retained IDs/history/old
+archive, failure preservation and idempotence. This is AMD64 execution evidence;
+ARM payload presence, RWX and proxy/TLS need their own validation.
+
+**Legacy rollback boundary:** core `1.0.5` publication through its original
+`0.10.4` helper is rejected by the `0.11.0` API at
+`permission_sets/admin.yaml` `/grants`: “System administration requires explicit
+external authority.” The tested ordinary registrar cannot supply that authority.
+Rejection preserves the new release/policy; object-mode new-core execution and
+forward recovery to the pinned `1.0.7` Helm configuration succeeded. Do not
+remove digest pins, mint privileges or add acknowledgements to bypass this
+boundary. Keep compatible services/agent and current core pins until an actual
+external-authority restore path is established. No automatic core, application
+or database downgrade is asserted. See [acceptance scope](../../docs/acceptance-image-pins.md#measured-acceptance-and-rollback-boundary).
+
 This sequence matters in both storage modes. Optional upgrade publication is an
 ordinary Job that can run concurrently with worker rollout; `--wait` or
 `--wait-for-jobs` does not make that Job start after workers drain. Required
@@ -968,15 +984,13 @@ compatible. `BOOTSTRAP_ADMISSION_ENABLED=false` gates the broader managed-runtim
 contract, not authenticated publication. No chart flag enables that gate, removes
 registrar checks or creates a deployment credential.
 
-Leave `corePack.digest` empty until the exact packaged release archive is
-available. The digest must be SHA-256 of the canonical immutable `pack.tar.gz`,
-including the native core action binaries for both architectures. It is not an
-OCI image digest or the Python publisher's source-upload tarball hash. The
-application publish workflow derives the `core-<version>` tag from the shipped
-pack manifest; it does not supply a release-archive digest here. Obtain that
-digest from the actual canonical release artifact after packaging, then use the
-same pin for publication and the content-ready hook. No digest or external
-registry checksum is invented by these defaults.
+`corePack.digest` pins the measured canonical published core archive
+`82a032962e28cf288a77e23273202e021428550cd655ba2c7776f3a98281e638`.
+It includes both architectures' native action binaries and is separate from the
+OCI index digest and the Python publisher's source-upload tarball hash. The
+[provenance record](../../docs/published-images-0.11.0.json) binds it to the
+published `0.11.0` source. Overrides must use the actual canonical archive for
+the selected candidate, not a pre-release local producer checksum.
 
 Before installation, record the source revision and measured OCI manifest digest
 for each coordinated platform image, including migrations, init-user and injected
@@ -1004,9 +1018,9 @@ Entrypoints are `actions/bin/{echo,sleep,noop,http_request}/{linux-amd64,linux-a
 Official init-packs must contain all eight executable static musl ELFs, correct
 machines and no `PT_INTERP`/`DT_NEEDED`; API-mode validation checks these before
 upload with no source fallback. Python publication and files-manifest v1 remain
-unchanged. `corePack.digest` is deliberately empty until the exact canonical
-archive from the selected published image is measured; never substitute an OCI
-digest, source checksum or an earlier local producer's core checksum.
+unchanged. The default `corePack.digest` is the measured canonical archive from
+the selected published image; never substitute an OCI digest, source checksum or
+an earlier local producer's core checksum.
 
 Historical local `BUILT_NOT_DEPLOYED` acceptance receipts prove their exact source
 and bytes only. The earlier b8 and mixed-source fresh results cannot establish

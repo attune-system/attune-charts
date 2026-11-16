@@ -16,6 +16,8 @@ class Pins(unittest.TestCase):
         self.assertEqual(record["release"], "0.11.0")
         self.assertEqual(record["source_revision"], "67b2f572a75f5057e1dd5978258fd7910d2564c9")
         self.assertEqual(len(record["images"]), 9)
+        self.assertEqual(record["core_archive"]["sha256"], "82a032962e28cf288a77e23273202e021428550cd655ba2c7776f3a98281e638")
+        self.assertNotEqual(record["core_archive"]["sha256"], record["images"]["init-packs"]["digest"].removeprefix("sha256:"))
         for published in record["images"].values():
             self.assertRegex(published["digest"], r"^sha256:[0-9a-f]{64}$")
             self.assertEqual(set(published["platforms"]), {"amd64", "arm64"})
@@ -38,7 +40,7 @@ class Pins(unittest.TestCase):
                 self.assertGreater(tuple(map(int, current.split("."))),
                                    tuple(map(int, record["release"].split("."))))
                 self.assertEqual(image["digest"], "", key)
-        self.assertEqual(values["corePack"]["digest"], "")
+        self.assertEqual(values["corePack"]["digest"], record["core_archive"]["sha256"])
         self.assertEqual(str(values["corePack"]["version"]), "1.0.7")
 
     def test_platform_override_does_not_retag_core_publication_or_wait(self):
@@ -58,6 +60,7 @@ class Pins(unittest.TestCase):
                              values["images"]["initPacks"]["digest"])
             env = {item["name"]: item.get("value") for item in container["env"]}
             self.assertEqual(env["ATTUNE_CORE_PACK_VERSION"], "1.0.7")
+            self.assertEqual(env["ATTUNE_CORE_PACK_DIGEST"], values["corePack"]["digest"])
         api = next(doc for doc in documents if doc["kind"] == "Deployment"
                    and doc["spec"]["template"]["metadata"]["labels"].get("app.kubernetes.io/component") == "api")
         self.assertEqual(api["spec"]["template"]["spec"]["containers"][0]["image"],

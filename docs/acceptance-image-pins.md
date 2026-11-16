@@ -17,9 +17,10 @@ A runtime-container image override alone does not replace the agent executable
 copied by `init-agent`. Stock `0.10.4` agents cannot execute native directories.
 
 `corePack.digest` is separate: SHA256 of the canonical native-inclusive pack
-archive from the selected image, not an OCI/source/upload-tarball digest. Leave it
-empty until measured. Historical b8/local mixed-source checksums are not release
-pins. Record actual API `/health/bootstrap` release/version/digest/policy and
+archive from the selected image, not an OCI/source/upload-tarball digest. The
+default pins the measured published archive recorded in the provenance file.
+Historical b8/local mixed-source checksums are not release pins. Record actual API
+`/health/bootstrap` release/version/digest/policy and
 independent `/health/content` results. Source or image metadata is not execution.
 
 ## Fresh and staged upgrades
@@ -47,6 +48,34 @@ post-upgrade hooks gate the target API only; Helm `--wait`/`--wait-for-jobs` doe
 not prove worker drainage. See [inspected hook ordering](../charts/attune/README.md#native-core-107-worker-compatibility).
 A missing historical publisher/API/schema compatibility prerequisite must be
 reported concretely; do not reset data or weaken gates to manufacture an upgrade.
+
+## Measured acceptance and rollback boundary
+
+Published-source `67b2f572a75f5057e1dd5978258fd7910d2564c9` passed owned AMD64
+fresh and genuine `0.10.4` / core `1.0.5` staged upgrades in both storage modes:
+normal credentials/re-login, actual imageIDs, worker rollout/drainage and old-core
+execution before activation, native four-action/HTTP success, exact seven action
+and owning-workflow retirement, unrelated IDs/history/old-archive retention,
+failed-admission preservation and idempotency. The canonical core archive is
+`82a032962e28cf288a77e23273202e021428550cd655ba2c7776f3a98281e638`.
+These observations do not establish ARM execution, RWX, proxy/TLS or general
+provider-failure coverage. The overnight object test included host suspend;
+wall elapsed is not an execution/performance measurement.
+
+Restoring core `1.0.5` through its original published `0.10.4` helper under
+`0.11.0` is **not supported by the tested ordinary registrar path**. The API
+rejects `permission_sets/admin.yaml` at `/grants` with HTTP400:
+“System administration requires explicit external authority.” Core `1.0.7`, its
+release/policy, retained projections and `identities:manage` remain active; new-core
+execution and forward recovery to the pinned `1.0.7` Helm configuration passed
+in object mode. Shared mode independently confirmed rejection preserved the
+new release/policy. Safe restorative downgrade is not claimed.
+
+Do not remove archive pins, add grants/acknowledgements or loosen authority checks
+to make a legacy rollback pass. Keep the compatible `0.11.0` services/agent and
+current core pins; a legacy administrative restore needs a separately established
+external-authority path. This chart does not create that authority. Helm rollback
+is not an application/database downgrade or a reversal of admitted pack state.
 
 ## Publisher and inventory contract
 

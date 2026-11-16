@@ -296,9 +296,9 @@ corePack:
   deploymentTokenSecret: ""
   deploymentTokenKey: ATTUNE_BOOTSTRAP_TOKEN
   version: "1.0.7"
-  # Pin the actual immutable release archive only after packaging native binaries.
-  # A source-only tarball or container-image digest is not this digest.
-  digest: ""
+  # Actual published 0.11.0 canonical core archive, including both native arches.
+  # Separate from OCI image/source-upload digests; see published provenance.
+  digest: "82a032962e28cf288a77e23273202e021428550cd655ba2c7776f3a98281e638"
   # Both storage modes use API admission. Optional upgrades use a normal Job;
   # required upgrades use a post-upgrade hook after target API Pods are ready.
   requiredOnUpgrade: false
