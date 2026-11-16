@@ -207,7 +207,7 @@ class HelmTests(unittest.TestCase):
                     self.assertEqual(env["ATTUNE_BOOTSTRAP_MODE"], "api")
                     self.assertEqual(env["ATTUNE_CORE_PACK_DIGEST"], "a" * 64)
                     self.assertEqual(env["ATTUNE_CORE_PACK_VERSION"], "1.0.7")
-                    self.assertTrue(container["image"].endswith("/init-packs:core-1.0.7"))
+                    self.assertEqual(container["image"], "ghcr.io/attune-system/attune/init-packs@" + yaml.safe_load((ROOT / "charts/attune/values.yaml").read_text())["images"]["initPacks"]["digest"])
                     self.assertTrue(env["ATTUNE_API_URL"].endswith("-api-r1:8080"))
                     self.assertEqual(container["args"], ["publish"])
                     self.assertNotIn("envFrom", container)

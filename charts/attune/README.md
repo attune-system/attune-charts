@@ -11,13 +11,15 @@ This chart installs the Attune platform, including these components:
 The chart defaults target a small single-node k3s cluster. All platform
 Deployments use one replica, and shared claims use `ReadWriteOnce`.
 
-Chart `0.10.5` targets Attune `0.10.4` and core pack `1.0.7`, using the
-independently versioned `core-1.0.7` init-packs image. API, executor, notifier,
-supervisor, web, and injected agent images inherit `global.imageTag` unless
-explicitly overridden. Keep API and agent images aligned. **Stock `0.10.4` worker
-code cannot execute core `1.0.7` native directory entrypoints. These draft defaults
-are not deployable without an actual compatible immutable worker/agent override.**
-See [worker compatibility](#native-core-107-worker-compatibility) before installation.
+Chart `0.11.0` targets Attune `0.11.0` and core pack `1.0.7`, using the
+independently versioned `core-1.0.7` init-packs image. Defaults pin the published
+AMD64/ARM64 image indexes from release commit
+`67b2f572a75f5057e1dd5978258fd7910d2564c9`, including the compatible injected
+agent and init-user helper. [Published provenance](../../docs/published-images-0.11.0.json)
+records index/child/config digests and source labels. Digests override tags;
+changing `global.imageTag` alone does not replace pinned binaries. Clear or replace
+the corresponding digest for an explicit image override. Keep API and agent code
+aligned. See [worker compatibility](#native-core-107-worker-compatibility).
 
 Pack publication requires an existing registrar-authorized deployment token in
 the Secret selected by `corePack.deploymentTokenSecret` and
@@ -896,14 +898,12 @@ consistent set.
 
 ### Native core 1.0.7 worker compatibility
 
-Native directory selection is new worker code from PR 41. Stock `0.10.4` workers
-advertise `native` but cannot execute directory entrypoints; runtime advertisement
-is not evidence of directory support. This draft keeps `appVersion` and platform
-tags at `0.10.4` only as metadata, paired with a requirement for an actual compatible
-immutable worker/agent override before activation. No compatible image selection
-is known yet, so this PR must remain draft and its defaults must not be deployed.
-Prefer coordinated platform release alignment once real versioned images exist;
-do not invent a tag/digest or silently retag every platform component.
+Attune `0.11.0` includes native directory selection and all coordinated security
+fixes through its release commit. Defaults now select the actual published
+compatible injected agent, rather than the incompatible stock `0.10.4` agent.
+Stock `0.10.4` advertises `native` but cannot execute directory entrypoints;
+runtime advertisement is not evidence of directory support. Image metadata and
+static payload checks do not replace live acceptance for the selected bytes.
 
 In this chart, `images.agent` selects the `init-agent` image that copies the worker
 executable into every action/sensor pool. Set its repository and actual measured
@@ -919,8 +919,7 @@ runtime, sensor or IAM settings:
 
 1. Keep the currently admitted OLD core release: preserve its `corePack.version`,
    `corePack.digest`, `images.initPacks.tag` and `images.initPacks.digest`. Roll out
-   the verified compatible `images.agent` override and any explicitly required
-   compatible service images. Wait for all worker rollouts to complete, old Pods
+   the pinned `0.11.0` injected agent and coordinated service images. Wait for all worker rollouts to complete, old Pods
    to terminate, and old/external workers to drain or be removed from dispatch.
    Verify old-core execution on the new code before proceeding.
 2. Retain those compatible worker pins, then select core `1.0.7` and its actual
@@ -989,38 +988,30 @@ Python 3 and PyYAML for publication only, core `1.0.7` metadata, and musl-linked
 AMD64/ARM64 binaries for exactly four native actions: `core.echo`, `core.sleep`,
 `core.noop` and `core.http_request` (eight ELF payloads total). All four must run
 directly in native full worker pools without curl, Python or shell action-runtime
-prerequisites; the chart adds no action interpreters. Native HTTP implementation,
-mocks, required CI and review remain pending upstream; this inventory requirement
-is not evidence of working HTTP execution or TLS deployment.
+prerequisites; the chart adds no action interpreters. Upstream release checks
+cover native HTTP; published-source chart acceptance remains separate from
+source tests, and ordinary HTTP success does not establish TLS deployment readiness.
 Record the canonical release-archive checksum separately from its image digest.
 Supply an existing registrar-authorized integration token in the selected Secret.
 
-Core `1.0.7` is a coordinated dependency on
-[Attune PR 41](https://github.com/attune-system/attune/pull/41), not evidence that
-`init-packs:core-1.0.7` has been published. Keep the chart PR draft until compatible
-API/worker/agent code and measured init-packs artifacts are available. Verify
-entrypoint selection from
-`actions/bin/{echo,sleep,noop,http_request}/{linux-amd64,linux-arm64}`
-(the HTTP entrypoint remains subject to the final owner contract)
-and record actual native action execution evidence before installation. Official
-init-packs artifacts must include all eight executable static musl ELF payloads,
-with the correct machine type and no `PT_INTERP` or `DT_NEEDED`; the API-mode
-publisher must validate them before upload with no source fallback. The existing
-Python publisher and files-manifest v1 remain the publication path.
+Core `1.0.7` / timer `0.7.5` are shipped in the published `0.11.0` release.
+The selected `init-packs:core-1.0.7` index and both architecture-specific configs
+were measured from public GHCR and identify the release commit. No release
+publication is required by this chart update. See the
+[published-source acceptance contract](../../docs/acceptance-image-pins.md).
 
-A hash-verified local producer receipt marked `BUILT_NOT_DEPLOYED` proves only
-its recorded source/artifact bytes. A receipt built before the combined post-PR54
-source is not combined acceptance evidence, an official registry/image pin or
-proof of native execution/deployment. Require artifacts from the actual combined
-source, including the explicit admin-policy update, before satisfying these gates.
+Entrypoints are `actions/bin/{echo,sleep,noop,http_request}/{linux-amd64,linux-arm64}`.
+Official init-packs must contain all eight executable static musl ELFs, correct
+machines and no `PT_INTERP`/`DT_NEEDED`; API-mode validation checks these before
+upload with no source fallback. Python publication and files-manifest v1 remain
+unchanged. `corePack.digest` is deliberately empty until the exact canonical
+archive from the selected published image is measured; never substitute an OCI
+digest, source checksum or an earlier local producer's core checksum.
 
-Core version `1.0.7` is provisional pending coordinator artifact/version decisions.
-There is no positive publication evidence here. The coordinator's anonymous GHCR
-probe returned 404 and package API returned 403 (read-packages access); neither
-establishes absence of a private immutable release. If an existing immutable
-`1.0.7` artifact is found, record its exact digest and resolve version reuse with
-the coordinator before publication. Do not overwrite an immutable release or
-invent a replacement tag.
+Historical local `BUILT_NOT_DEPLOYED` acceptance receipts prove their exact source
+and bytes only. The earlier b8 and mixed-source fresh results cannot establish
+acceptance of these published `0.11.0` images. Likewise, image architecture
+metadata is not ARM execution, RWX or proxy/TLS/provider-failure validation.
 
 The chart delegates the deployment payload to the image's `publish_core(base,
 pack_dir)` helper; it does not set metadata removal policy itself. The bundled
@@ -1052,9 +1043,8 @@ contract. Optional utility actions are deferred to a separate pack.
 
 Use owned acceptance infrastructure to prove fresh publication, idempotent rerun,
 denial and failed-upgrade preservation of prior release/policy/configuration in
-both storage modes, plus the independent content-readiness wait. Missing images
-require central build/artifact preparation and authorized registry publication;
-missing deployment authority requires an operator credential instead. Offline
+both storage modes, plus the independent content-readiness wait. Published release images are available; missing deployment authority still
+requires a legitimate operator credential. Offline
 renders do not satisfy either requirement. See
 [central acceptance image inputs](../../docs/acceptance-image-pins.md).
 

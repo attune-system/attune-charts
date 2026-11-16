@@ -34,6 +34,8 @@ class ReleaseUpdateTests(unittest.TestCase):
             self.assertEqual(updated["version"], expected_chart)
             self.assertEqual(updated["appVersion"], target_version)
             self.assertEqual(values["global"]["imageTag"], target_version)
+            for component in ("api", "executor", "notifier", "supervisor", "mcp", "web", "migrations", "initUser", "agent"):
+                self.assertEqual(values["images"][component]["digest"], "", component)
             self.assertEqual(values["corePack"], before_values["corePack"])
             self.assertEqual(values["images"]["initPacks"], before_values["images"]["initPacks"])
             for name in ("README.md", "charts/attune/README.md"):

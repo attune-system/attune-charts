@@ -6,7 +6,7 @@ global:
   imageNamespace: attune-system
   # Stable platform release. Per-image tags or digests can override this value;
   # the init-packs image is versioned independently below.
-  imageTag: "0.10.4"
+  imageTag: "0.11.0"
   imagePullSecrets: []
 
 # Secure workload defaults satisfy Kubernetes Pod Security Admission's
@@ -235,59 +235,58 @@ sharedStorage:
     storageClassName: ""
 
 images:
-  # Optional per-image digest takes precedence over tag. It is an OCI image
-  # digest, NOT corePack.digest (the canonical native-inclusive pack archive).
+  # Published 0.11.0 multiarch indexes; digests take precedence over tags.
+  # Provenance: docs/published-images-0.11.0.json. NOT corePack.digest.
   api:
     repository: attune/api
-    digest: ""
+    digest: "sha256:8c9a93017dce961ea7bbc2faba2ba05a48e7ee4de2a3fb59f93b57070221a786"
     tag: ""
     pullPolicy: IfNotPresent
   executor:
     repository: attune/executor
-    digest: ""
+    digest: "sha256:a5c10becb268e0b292ab45cc90780b849a85a0912e6b03a7e9a09ab16f8025ae"
     tag: ""
     pullPolicy: IfNotPresent
   notifier:
     repository: attune/notifier
-    digest: ""
+    digest: "sha256:e09024d4f8869ecad0705349f5e5c29deb21735a324ffd81e28e1ab13fa747bd"
     tag: ""
     pullPolicy: IfNotPresent
   supervisor:
     repository: attune/supervisor
-    digest: ""
+    digest: "sha256:ce3be2dad0a8c3214ca050545b7f30dcf9df65222193b0194b0999284122ba68"
     tag: ""
     pullPolicy: IfNotPresent
   mcp:
     repository: attune/agent
-    digest: ""
+    digest: "sha256:641bc7f5505b776624563bb247d3f82cfeb8eccef3240b13c7fde69d53e68abb"
     tag: ""
     pullPolicy: IfNotPresent
   web:
     repository: attune/web
-    digest: ""
+    digest: "sha256:549350acf2ce3b8c082ae3c18c62a7731158aa08d425234019eca06a259c9552"
     tag: ""
     pullPolicy: IfNotPresent
   migrations:
     repository: attune/migrations
-    digest: ""
+    digest: "sha256:2274d6218ad94762ce5e0327a33c3d8cba222e6a79ff3996bae1ab21630a8c69"
     tag: ""
     pullPolicy: IfNotPresent
   initUser:
     repository: attune/init-user
-    digest: ""
+    digest: "sha256:af95e0168f0d0158672fee41ae2b4e27d4413d7f4a6e59ff3f2c2b5db5ab2b91"
     tag: ""
     pullPolicy: IfNotPresent
   initPacks:
     repository: attune/init-packs
-    digest: ""
+    digest: "sha256:defdcfc489c2229916849132f533fa4cb1479493ebe345814488aececb71a5a9"
     tag: "core-1.0.7"
     pullPolicy: IfNotPresent
-  # Draft compatibility gate: stock 0.10.4 agent lacks native directory selection.
-  # Before core 1.0.7 activation, supply an actual compatible immutable image;
-  # no compatible tag/digest is asserted here. See README staged rollout.
+  # Compatible 0.11.0 agent injected into all pools; runtime image is separate.
+  # See README for old-core-first rollout/drainage requirements.
   agent:
     repository: attune/agent
-    digest: ""
+    digest: "sha256:641bc7f5505b776624563bb247d3f82cfeb8eccef3240b13c7fde69d53e68abb"
     tag: ""
     pullPolicy: IfNotPresent
 

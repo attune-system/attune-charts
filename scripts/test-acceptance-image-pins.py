@@ -11,9 +11,18 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 class Pins(unittest.TestCase):
-    def test_no_image_or_pack_digest_is_invented_in_defaults(self):
+    def test_defaults_match_published_multiarch_release(self):
         values = yaml.safe_load((ROOT / "charts/attune/values.yaml").read_text())
-        self.assertTrue(all(image["digest"] == "" for image in values["images"].values()))
+        record = yaml.safe_load((ROOT / "docs/published-images-0.11.0.json").read_text())
+        self.assertEqual(record["source_revision"], "67b2f572a75f5057e1dd5978258fd7910d2564c9")
+        self.assertEqual(values["global"]["imageTag"], record["release"])
+        for key, image in values["images"].items():
+            name = image["repository"].split("/")[-1]
+            published = record["images"][name]
+            self.assertEqual(image["digest"], published["digest"], key)
+            self.assertEqual(set(published["platforms"]), {"amd64", "arm64"})
+            for platform in published["platforms"].values():
+                self.assertEqual(platform["source_revision"], record["source_revision"])
         self.assertEqual(values["corePack"]["digest"], "")
         self.assertEqual(str(values["corePack"]["version"]), "1.0.7")
 
@@ -29,13 +38,34 @@ class Pins(unittest.TestCase):
                 for doc in documents if doc["kind"] == "Job"}
         for component in ("init-packs", "content-ready"):
             container = jobs[component]
-            self.assertEqual(container["image"], "ghcr.io/attune-system/attune/init-packs:core-1.0.7")
+            self.assertEqual(container["image"], "ghcr.io/attune-system/attune/init-packs@" +
+                             yaml.safe_load((ROOT / "charts/attune/values.yaml").read_text())["images"]["initPacks"]["digest"])
             env = {item["name"]: item.get("value") for item in container["env"]}
             self.assertEqual(env["ATTUNE_CORE_PACK_VERSION"], "1.0.7")
         api = next(doc for doc in documents if doc["kind"] == "Deployment"
                    and doc["spec"]["template"]["metadata"]["labels"].get("app.kubernetes.io/component") == "api")
         self.assertEqual(api["spec"]["template"]["spec"]["containers"][0]["image"],
-                         "ghcr.io/attune-system/attune/api:fixture-platform")
+                         "ghcr.io/attune-system/attune/api@" +
+                         yaml.safe_load((ROOT / "charts/attune/values.yaml").read_text())["images"]["api"]["digest"])
+
+    def test_published_agent_is_injected_in_both_storage_modes(self):
+        values = yaml.safe_load((ROOT / "charts/attune/values.yaml").read_text())
+        agent = "ghcr.io/attune-system/attune/agent@" + values["images"]["agent"]["digest"]
+        for mode in ("sharedVolume", "object"):
+            rendered = subprocess.run(
+                ["helm", "template", "published", str(ROOT / "charts/attune"),
+                 "--set", "security.existingSecret=fixture-runtime", "--set", "storage.mode=" + mode,
+                 "--set", "storage.object.bucket=fixture", "--set", "storage.object.region=us-east-1",
+                 "--set", "storage.object.endpoint=http://storage.invalid"],
+                check=True, capture_output=True, text=True, timeout=30).stdout
+            pools = [doc for doc in yaml.safe_load_all(rendered) if doc and doc["kind"] == "Deployment"
+                     and doc["metadata"]["labels"].get("app.kubernetes.io/component", "").startswith(
+                         ("action-worker-", "sensor-worker-"))]
+            self.assertEqual(len(pools), 2)
+            for pool in pools:
+                init = next(c for c in pool["spec"]["template"]["spec"]["initContainers"]
+                            if c["name"] == "init-agent")
+                self.assertEqual(init["image"], agent)
 
     def test_staged_core_pins_preserve_explicit_injected_agent_override(self):
         # Deliberately synthetic, offline-only image bytes; this is selection
