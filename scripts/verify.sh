@@ -800,7 +800,19 @@ object_init_packs_image="$({
     eval-all --no-doc 'select(.kind == "Job" and .metadata.labels."app.kubernetes.io/component" == "init-packs") | .spec.template.spec.containers[] | select(.name == "init-packs") | .image' - \
     < "$render_dir/attune-object-upgrade.yaml"
 })"
-if [[ "$object_init_packs_image" != 'ghcr.io/attune-system/attune/init-packs:core-1.0.7' ]]; then
+# Match the actual selected immutable digest; retain tag fallback for unpinned
+# inputs. Published-default/provenance consistency is checked by the pin suite.
+expected_init_packs_image="$(python3 - "$root_dir/charts/attune/values.yaml" <<'PYIMAGE'
+import sys, yaml
+values = yaml.safe_load(open(sys.argv[1]))
+image = values["images"]["initPacks"]
+global_values = values["global"]
+registry, namespace = global_values["imageRegistry"], global_values["imageNamespace"]
+name = "/".join([registry, *([namespace] if registry and namespace else []), image["repository"]]) if registry else image["repository"]
+print(name + ("@" + image["digest"] if image["digest"] else ":" + (image["tag"] or global_values["imageTag"])))
+PYIMAGE
+)"
+if [[ "$object_init_packs_image" != "$expected_init_packs_image" ]]; then
   printf 'object-mode init-packs image is not pinned to core 1.0.7: %s\n' "$object_init_packs_image" >&2
   exit 1
 fi

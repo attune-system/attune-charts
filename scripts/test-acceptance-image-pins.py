@@ -11,22 +11,38 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 class Pins(unittest.TestCase):
-    def test_defaults_match_published_multiarch_release(self):
-        values = yaml.safe_load((ROOT / "charts/attune/values.yaml").read_text())
+    def test_historical_published_provenance(self):
         record = yaml.safe_load((ROOT / "docs/published-images-0.11.0.json").read_text())
+        self.assertEqual(record["release"], "0.11.0")
         self.assertEqual(record["source_revision"], "67b2f572a75f5057e1dd5978258fd7910d2564c9")
-        self.assertEqual(values["global"]["imageTag"], record["release"])
-        for key, image in values["images"].items():
-            name = image["repository"].split("/")[-1]
-            published = record["images"][name]
-            self.assertEqual(image["digest"], published["digest"], key)
+        self.assertEqual(len(record["images"]), 9)
+        for published in record["images"].values():
+            self.assertRegex(published["digest"], r"^sha256:[0-9a-f]{64}$")
             self.assertEqual(set(published["platforms"]), {"amd64", "arm64"})
             for platform in published["platforms"].values():
                 self.assertEqual(platform["source_revision"], record["source_revision"])
+                self.assertRegex(platform["digest"], r"^sha256:[0-9a-f]{64}$")
+                self.assertRegex(platform["config_digest"], r"^sha256:[0-9a-f]{64}$")
+
+    def test_current_release_selection(self):
+        values = yaml.safe_load((ROOT / "charts/attune/values.yaml").read_text())
+        record = yaml.safe_load((ROOT / "docs/published-images-0.11.0.json").read_text())
+        current = values["global"]["imageTag"]
+        for key, image in values["images"].items():
+            published = record["images"][image["repository"].split("/")[-1]]
+            if current == record["release"] or key == "initPacks":
+                self.assertEqual(image["digest"], published["digest"], key)
+            else:
+                # The updater advances tags and clears stale platform digests;
+                # the historical snapshot must not block that generated PR.
+                self.assertGreater(tuple(map(int, current.split("."))),
+                                   tuple(map(int, record["release"].split("."))))
+                self.assertEqual(image["digest"], "", key)
         self.assertEqual(values["corePack"]["digest"], "")
         self.assertEqual(str(values["corePack"]["version"]), "1.0.7")
 
     def test_platform_override_does_not_retag_core_publication_or_wait(self):
+        values = yaml.safe_load((ROOT / "charts/attune/values.yaml").read_text())
         rendered = subprocess.run(
             ["helm", "template", "pins", str(ROOT / "charts/attune"),
              "--set", "security.existingSecret=fixture-runtime",
@@ -39,18 +55,21 @@ class Pins(unittest.TestCase):
         for component in ("init-packs", "content-ready"):
             container = jobs[component]
             self.assertEqual(container["image"], "ghcr.io/attune-system/attune/init-packs@" +
-                             yaml.safe_load((ROOT / "charts/attune/values.yaml").read_text())["images"]["initPacks"]["digest"])
+                             values["images"]["initPacks"]["digest"])
             env = {item["name"]: item.get("value") for item in container["env"]}
             self.assertEqual(env["ATTUNE_CORE_PACK_VERSION"], "1.0.7")
         api = next(doc for doc in documents if doc["kind"] == "Deployment"
                    and doc["spec"]["template"]["metadata"]["labels"].get("app.kubernetes.io/component") == "api")
         self.assertEqual(api["spec"]["template"]["spec"]["containers"][0]["image"],
-                         "ghcr.io/attune-system/attune/api@" +
-                         yaml.safe_load((ROOT / "charts/attune/values.yaml").read_text())["images"]["api"]["digest"])
+                         "ghcr.io/attune-system/attune/api" +
+                         ("@" + values["images"]["api"]["digest"]
+                          if values["images"]["api"]["digest"]
+                          else ":fixture-platform"))
 
     def test_published_agent_is_injected_in_both_storage_modes(self):
         values = yaml.safe_load((ROOT / "charts/attune/values.yaml").read_text())
-        agent = "ghcr.io/attune-system/attune/agent@" + values["images"]["agent"]["digest"]
+        agent = "ghcr.io/attune-system/attune/agent" + ("@" + values["images"]["agent"]["digest"]
+                 if values["images"]["agent"]["digest"] else ":" + values["global"]["imageTag"])
         for mode in ("sharedVolume", "object"):
             rendered = subprocess.run(
                 ["helm", "template", "published", str(ROOT / "charts/attune"),
@@ -66,6 +85,24 @@ class Pins(unittest.TestCase):
                 init = next(c for c in pool["spec"]["template"]["spec"]["initContainers"]
                             if c["name"] == "init-agent")
                 self.assertEqual(init["image"], agent)
+
+    def test_verify_script_image_expectation_preserves_digest_precedence(self):
+        # Execute the owning full verifier's expectation code, not a test copy.
+        script = (ROOT / "scripts/verify.sh").read_text().split("<<'PYIMAGE'\n", 1)[1].split("\nPYIMAGE", 1)[0]
+        values = yaml.safe_load((ROOT / "charts/attune/values.yaml").read_text())
+        image = values["images"]["initPacks"]
+        published = image["digest"]
+        with tempfile.TemporaryDirectory(prefix="attune-verifier-image-") as directory:
+            path = Path(directory) / "values.yaml"
+            for digest, tag, expected in ((published, "ignored", "@" + published),
+                                          ("", "core-1.0.7", ":core-1.0.7"),
+                                          ("", "", ":" + values["global"]["imageTag"])):
+                with self.subTest(digest=digest, tag=tag):
+                    image.update(digest=digest, tag=tag)
+                    path.write_text(yaml.safe_dump(values))
+                    actual = subprocess.run(["python3", "-", str(path)], input=script,
+                                            text=True, capture_output=True, check=True).stdout.strip()
+                    self.assertEqual(actual, "ghcr.io/attune-system/attune/init-packs" + expected)
 
     def test_staged_core_pins_preserve_explicit_injected_agent_override(self):
         # Deliberately synthetic, offline-only image bytes; this is selection
