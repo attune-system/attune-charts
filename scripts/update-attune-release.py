@@ -50,6 +50,19 @@ else:
 replace_once(chart_path, r"^version: \S+$", f"version: {next_chart_version}")
 replace_once(chart_path, r'^appVersion: "\S+"$', f'appVersion: "{target_version}"')
 replace_once(values_path, r'^  imageTag: "\S+"$', f'  imageTag: "{target_version}"')
+# A digest takes precedence over global.imageTag. Drop prior platform pins when
+# advancing the app; independent core init-packs pins must remain untouched.
+values = values_path.read_text()
+for component in ("api", "executor", "notifier", "supervisor", "mcp", "web",
+                  "migrations", "initUser", "agent"):
+    values, count = re.subn(
+        rf'(^  {component}:\n    repository: [^\n]+\n    digest:) "[^"\n]*"',
+        r'\1 ""', values, count=1, flags=re.MULTILINE,
+    )
+    if count != 1:
+        raise SystemExit(f"could not reset prior platform digest for {component}")
+values_path.write_text(values)
+
 replace_once(
     readme_path,
     r"^(\| `attune` \| )`[^`]+`( \|)",
