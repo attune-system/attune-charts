@@ -926,21 +926,29 @@ runtime, sensor or IAM settings:
    compatible init-packs artifact, using measured image/archive digests when
    available. Verify native execution and the removal/preservation inventories.
 
-Owned published-source acceptance passed fresh and genuine `0.10.4`/core `1.0.5`
-staged upgrades in both modes, including retirement, retained IDs/history/old
-archive, failure preservation and idempotence. This is AMD64 execution evidence;
-ARM payload presence, RWX and proxy/TLS need their own validation.
+Chart `0.11.0` support validated here covers fresh installations and staged
+**forward upgrades** from `0.10.4`/core `1.0.5` to `0.11.0`/core `1.0.7` in both
+storage modes. Acceptance includes retirement, retained IDs/history/old archive,
+failure preservation and idempotence. This is AMD64 execution evidence; ARM
+execution, RWX and proxy/TLS need their own validation.
 
-**Legacy rollback boundary:** core `1.0.5` publication through its original
-`0.10.4` helper is rejected by the `0.11.0` API at
+**Original core `1.0.5` restoration is unsupported.** Released `0.11.0` exposes
+no supported retained-release reactivation or rollback operation. Retained
+history and archive pins preserve historical bindings; they do not reactivate
+an older release. Re-upload through the original `0.10.4` helper is rejected at
 `permission_sets/admin.yaml` `/grants`: “System administration requires explicit
-external authority.” The tested ordinary registrar cannot supply that authority.
-Rejection preserves the new release/policy; object-mode new-core execution and
-forward recovery to the pinned `1.0.7` Helm configuration succeeded. Do not
-remove digest pins, mint privileges or add acknowledgements to bypass this
-boundary. Keep compatible services/agent and current core pins until an actual
-external-authority restore path is established. No automatic core, application
-or database downgrade is asserted. See [acceptance scope](../../docs/acceptance-image-pins.md#measured-acceptance-and-rollback-boundary).
+external authority.” Stronger registrar privileges or external approvals do not
+make the unchanged legacy Pack-scope definition valid.
+
+The failed restoration preserved the new release/policy in both modes;
+object-mode new-core execution and forward recovery to the pinned `1.0.7` Helm
+configuration succeeded. These are safety and forward-recovery results, not a
+successful legacy restore. Keep compatible services/agent and current core pins;
+do not remove digest pins, add grants or acknowledgements, or loosen authority
+checks to bypass this boundary. Helm rollback does not reverse admitted pack
+state. Full backup-based disaster recovery requires separate coordination and
+was not validated here; no application/database downgrade is established. See
+[acceptance scope](../../docs/acceptance-image-pins.md#measured-acceptance-and-rollback-boundary).
 
 This sequence matters in both storage modes. Optional upgrade publication is an
 ordinary Job that can run concurrently with worker rollout; `--wait` or

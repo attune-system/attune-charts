@@ -23,7 +23,7 @@ Historical b8/local mixed-source checksums are not release pins. Record actual A
 `/health/bootstrap` release/version/digest/policy and
 independent `/health/content` results. Source or image metadata is not execution.
 
-## Fresh and staged upgrades
+## Fresh installations and staged forward upgrades
 
 Use dedicated disposable namespaces, credentials, storage and explicit context,
 with a campaign lease/resource budget and awaited cleanup. Fresh acceptance must
@@ -32,7 +32,7 @@ normal init-user/login/password-change/**re-login**, then a legitimate
 identities:manage-issued registrar token. Never replace this with SQL tokens,
 extra grants, root publisher UID or admission bypass.
 
-For an upgrade, recover a genuine OLD tuple from historical published artifacts;
+For a staged forward upgrade, recover a genuine OLD tuple from historical published artifacts;
 do not seed the new release and call absent components retired:
 
 1. Preserve OLD `corePack.version`, canonical `corePack.digest`, and init-packs
@@ -51,8 +51,10 @@ reported concretely; do not reset data or weaken gates to manufacture an upgrade
 
 ## Measured acceptance and rollback boundary
 
-Published-source `67b2f572a75f5057e1dd5978258fd7910d2564c9` passed owned AMD64
-fresh and genuine `0.10.4` / core `1.0.5` staged upgrades in both storage modes:
+Chart `0.11.0` support validated here covers fresh installations and staged
+**forward upgrades** from `0.10.4`/core `1.0.5` to `0.11.0`/core `1.0.7`.
+Published-source `67b2f572a75f5057e1dd5978258fd7910d2564c9` passed that owned AMD64
+scope in both storage modes:
 normal credentials/re-login, actual imageIDs, worker rollout/drainage and old-core
 execution before activation, native four-action/HTTP success, exact seven action
 and owning-workflow retirement, unrelated IDs/history/old-archive retention,
@@ -62,20 +64,29 @@ These observations do not establish ARM execution, RWX, proxy/TLS or general
 provider-failure coverage. The overnight object test included host suspend;
 wall elapsed is not an execution/performance measurement.
 
-Restoring core `1.0.5` through its original published `0.10.4` helper under
-`0.11.0` is **not supported by the tested ordinary registrar path**. The API
-rejects `permission_sets/admin.yaml` at `/grants` with HTTP400:
-“System administration requires explicit external authority.” Core `1.0.7`, its
-release/policy, retained projections and `identities:manage` remain active; new-core
-execution and forward recovery to the pinned `1.0.7` Helm configuration passed
-in object mode. Shared mode independently confirmed rejection preserved the
-new release/policy. Safe restorative downgrade is not claimed.
+**Original core `1.0.5` restoration is unsupported.** Released `0.11.0` exposes
+no supported retained-release reactivation or rollback operation. Release history,
+archive retention and historical execution pins do not reactivate an older
+release. The rollback command described in the application's proposed pack-release
+specification is not shipped in this release.
 
-Do not remove archive pins, add grants/acknowledgements or loosen authority checks
-to make a legacy rollback pass. Keep the compatible `0.11.0` services/agent and
-current core pins; a legacy administrative restore needs a separately established
-external-authority path. This chart does not create that authority. Helm rollback
-is not an application/database downgrade or a reversal of admitted pack state.
+Re-upload through the original published `0.10.4` helper returned HTTP400 at
+`permission_sets/admin.yaml` `/grants`: “System administration requires explicit
+external authority.” Its unchanged legacy admin definition defaults to Pack
+scope and is not an exact current-catalog definition. This structural rejection
+is not remedied by stronger registrar privileges or external approvals.
+
+The failed attempt preserved core `1.0.7`, its release/policy, retained projections
+and `identities:manage` in both modes. New-core execution and forward recovery to
+the pinned `1.0.7` Helm configuration passed in object mode. Rejection safety and
+forward recovery are distinct from successful restoration; no restorative
+rollback passed.
+
+Keep compatible `0.11.0` services/agent and current core pins. Do not remove
+archive pins, add grants/acknowledgements or loosen authority checks to bypass
+this boundary. Helm rollback does not reverse admitted pack state. Full
+backup-based disaster recovery requires separate coordination and was not
+validated here; no application/database downgrade is established.
 
 ## Publisher and inventory contract
 
@@ -104,5 +115,6 @@ retirement or ID/history preservation evidence.
 Record source-specific receipts, actual imageIDs, authenticated success and 401/403
 denials, inventories, canonical archive digest and cleanup. Published-source fresh
 and staged-upgrade results are distinct from earlier local b8 acceptance. ARM
-payload presence does not prove ARM worker execution; RWX, proxy/TLS, provider
-failure and rollback need their own affected coverage. Keep readiness gaps explicit.
+payload presence does not prove ARM worker execution; RWX, proxy/TLS and provider
+failure remain outside the measured scope. Original legacy restoration is
+unsupported as described above; this is not a blanket compatibility waiver.
