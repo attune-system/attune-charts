@@ -7,6 +7,7 @@ Only a loopback synthetic API is used. No platform credentials or live API.
 import concurrent.futures
 import http.client
 import json
+import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 import socket
@@ -128,6 +129,11 @@ class ImageIntegration(unittest.TestCase):
         api = ThreadingHTTPServer(('0.0.0.0', 0), API)
         thread = threading.Thread(target=api.serve_forever, daemon=True)
         thread.start()
+        def cleanup_api():
+            api.shutdown()
+            api.server_close()
+            thread.join()
+        self.addCleanup(cleanup_api)
         c = container(render({'mcp': {'enabled': True}}))
         image = c['image']
         subprocess.run(['docker', 'pull', image], check=True, capture_output=True)
@@ -143,12 +149,23 @@ class ImageIntegration(unittest.TestCase):
                           if d and d['kind'] == 'Deployment' and d['metadata']['name'] == 'mcp-test-attune-mcp')
         init = deployment['spec']['template']['spec']['initContainers'][0]
         bundle = tempfile.TemporaryDirectory(prefix='attune-mcp-ca-')
+        self.addCleanup(bundle.cleanup)
         Path(bundle.name).chmod(0o777)
         copy = ['docker', 'run', '--rm', '--user', '1000:1000', '--cap-drop', 'ALL',
                 '--security-opt', 'no-new-privileges', '-v', bundle.name + ':/ca-bundle',
                 '--entrypoint', init['command'][0], init['image'], *init['command'][1:], *init['args']]
         subprocess.run(copy, check=True, capture_output=True)
-        self.assertGreater((Path(bundle.name) / 'ca-certificates.crt').stat().st_size, 1000)
+        ca_path = Path(bundle.name) / 'ca-certificates.crt'
+        self.assertGreater(ca_path.stat().st_size, 1000)
+        # Also reproduce a host/container UID mismatch on every machine, even
+        # when the developer happens to use the chart's UID 1000.
+        ca_path.unlink()
+        mismatched_copy = copy.copy()
+        other_uid = 1001 if os.getuid() == 1000 else 1000
+        mismatched_copy[mismatched_copy.index('1000:1000')] = f'{other_uid}:{other_uid}'
+        subprocess.run(mismatched_copy, check=True, capture_output=True)
+        self.assertEqual(ca_path.stat().st_mode & 0o777, 0o444)
+
         # A custom API image without the public bundle must stop the init.
         missing = copy.copy()
         missing[missing.index(init['image'])] = 'busybox:1.36'
@@ -229,7 +246,7 @@ class ImageIntegration(unittest.TestCase):
                 self.assertEqual(status, 200)
                 self.assertIn(caller, body.decode())
                 self.assertNotIn('caller-b' if caller == 'caller-a' else 'caller-a', body.decode())
-            self.assertTrue(all(path == '/auth/me' or path.startswith('/api/v1/events?') for path, _ in seen))
+            self.assertTrue(all(path == '/auth/me' or path.startswith('/api/v1/events?') for path, _ in seen), seen)
             remove()
             custom = environment(container(render({'mcp': {'enabled': True, 'http': {
                 'hosts': ['mcp.example.com'], 'origins': ['https://console.example.com']}}})))
@@ -262,8 +279,11 @@ class ImageIntegration(unittest.TestCase):
                 self.assertEqual(request(token='Bearer caller-a')[0], 401)
                 remove()
                 ca_file = Path(bundle.name) / 'ca-certificates.crt'
-                ca_file.chmod(0o644)
-                ca_file.write_bytes(ca_file.read_bytes() + cert.read_bytes())
+                trusted_bundle = ca_file.read_bytes() + cert.read_bytes()
+                # The init runs as UID 1000; CI runner UID may differ. Replace
+                # this owned fixture path instead of chmod on a container-owned file.
+                ca_file.unlink()
+                ca_file.write_bytes(trusted_bundle)
                 ca_file.chmod(0o444)
                 start(tls_env)
                 ready()
@@ -282,10 +302,7 @@ class ImageIntegration(unittest.TestCase):
                 remove()
         finally:
             subprocess.run(['docker', 'rm', '-f', name], capture_output=True)
-            api.shutdown()
-            api.server_close()
-            thread.join()
-            bundle.cleanup()
+
 
 
 if __name__ == '__main__':
