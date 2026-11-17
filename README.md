@@ -5,7 +5,7 @@ publishes charts for the Attune platform and its public sites.
 
 | Chart | Version | Purpose |
 | --- | --- | --- |
-| `attune` | `0.11.0` | Attune services, workers, PostgreSQL, and RabbitMQ |
+| `attune` | `0.11.1` | Attune services, workers, PostgreSQL, and RabbitMQ |
 | `attune-site` | `0.1.7` | `attunedev.org` and its inquiry form |
 | `attune-docs-site` | `0.1.6` | `docs.attunedev.org` |
 
@@ -37,10 +37,10 @@ https://github.com/attune-system/attune-charts.git
 
 ## Install a chart
 
-Chart `0.11.0` targets Attune `0.11.0` and the independently pinned core pack
-`1.0.7`. Defaults select published, immutable multiarch `0.11.0` service and
+Chart `0.11.1` targets Attune `0.11.1` and the independently pinned core pack
+`1.0.7`. Defaults select published, immutable multiarch `0.11.1` service and
 injected-agent images, plus the independently versioned `core-1.0.7` init-packs
-image. See the [published image provenance](docs/published-images-0.11.0.json) and
+image. See the [published image provenance](docs/published-images-0.11.1.json) and
 [worker compatibility and staged rollout](charts/attune/README.md#native-core-107-worker-compatibility)
 requirements. Supply an existing registrar-authorized deployment token in the Secret
 selected by `corePack.deploymentTokenSecret` and `corePack.deploymentTokenKey`.
@@ -79,7 +79,7 @@ This mode creates `attune-setup/namespace.yaml`, `secrets.yaml`,
 commands in order. Install the CloudNativePG operator before applying the
 generated `postgresql.yaml`.
 
-Chart `0.11.0` targets Attune `0.11.0` without the TimescaleDB dependency.
+Chart `0.11.1` targets Attune `0.11.1` without the TimescaleDB dependency.
 Use it for fresh native PostgreSQL installations. Upgrades refuse a database
 with the TimescaleDB extension before provisioning, migrations, or StatefulSet
 changes. Converting populated TimescaleDB installations is not supported.
@@ -255,7 +255,7 @@ helm upgrade --install attune attune/attune \
   --timeout 20m
 ```
 
-The platform chart pulls Attune `0.11.0` images from
+The platform chart pulls Attune `0.11.1` images from
 `ghcr.io/attune-system/attune`. Apply the generated namespace, Secret, and
 optional CloudNativePG manifests before installation. The chart does not accept
 credentials through Helm values.

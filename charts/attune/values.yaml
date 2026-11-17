@@ -6,7 +6,7 @@ global:
   imageNamespace: attune-system
   # Stable platform release. Per-image tags or digests can override this value;
   # the init-packs image is versioned independently below.
-  imageTag: "0.11.0"
+  imageTag: "0.11.1"
   imagePullSecrets: []
 
 # Secure workload defaults satisfy Kubernetes Pod Security Admission's
@@ -235,46 +235,46 @@ sharedStorage:
     storageClassName: ""
 
 images:
-  # Published 0.11.0 multiarch indexes; digests take precedence over tags.
-  # Provenance: docs/published-images-0.11.0.json. NOT corePack.digest.
+  # Published 0.11.1 platform multiarch indexes; digests take precedence over tags.
+  # Platform provenance: docs/published-images-0.11.1.json. NOT corePack.digest.
   api:
     repository: attune/api
-    digest: "sha256:8c9a93017dce961ea7bbc2faba2ba05a48e7ee4de2a3fb59f93b57070221a786"
+    digest: "sha256:f303cfdd4fc12a464f6e5172f538dc045cc4dd20dcc9c6d9ce94bd562901961c"
     tag: ""
     pullPolicy: IfNotPresent
   executor:
     repository: attune/executor
-    digest: "sha256:a5c10becb268e0b292ab45cc90780b849a85a0912e6b03a7e9a09ab16f8025ae"
+    digest: "sha256:9cb164659b914cb60d42e956580b0b863b4c0288bf9073e98a4957524240ee8f"
     tag: ""
     pullPolicy: IfNotPresent
   notifier:
     repository: attune/notifier
-    digest: "sha256:e09024d4f8869ecad0705349f5e5c29deb21735a324ffd81e28e1ab13fa747bd"
+    digest: "sha256:4855e10fee7a33deca1a1cbf1feb91cc7498e94e6fd8ef7f790a7f99510554b1"
     tag: ""
     pullPolicy: IfNotPresent
   supervisor:
     repository: attune/supervisor
-    digest: "sha256:ce3be2dad0a8c3214ca050545b7f30dcf9df65222193b0194b0999284122ba68"
+    digest: "sha256:8e388b6c442ad66b1d16e5f1fd1a1dbca251efed7042e7db4769469d973e759b"
     tag: ""
     pullPolicy: IfNotPresent
   mcp:
     repository: attune/agent
-    digest: "sha256:641bc7f5505b776624563bb247d3f82cfeb8eccef3240b13c7fde69d53e68abb"
+    digest: "sha256:24346320bee236e86e256a34f666359bf8c6c2a2db1c8c63c89060788e98ed4f"
     tag: ""
     pullPolicy: IfNotPresent
   web:
     repository: attune/web
-    digest: "sha256:549350acf2ce3b8c082ae3c18c62a7731158aa08d425234019eca06a259c9552"
+    digest: "sha256:4966b7f9f57be74a00f1c7b924c1b657aa27ffe574ac6166d0e65cbf6e82654c"
     tag: ""
     pullPolicy: IfNotPresent
   migrations:
     repository: attune/migrations
-    digest: "sha256:2274d6218ad94762ce5e0327a33c3d8cba222e6a79ff3996bae1ab21630a8c69"
+    digest: "sha256:3230606e2148c5bf522f6797f4a49f1723218abfe8f4a16769eab5e9eb545c80"
     tag: ""
     pullPolicy: IfNotPresent
   initUser:
     repository: attune/init-user
-    digest: "sha256:af95e0168f0d0158672fee41ae2b4e27d4413d7f4a6e59ff3f2c2b5db5ab2b91"
+    digest: "sha256:1267e267768a61d90c6d42424aafa852f90d0ed5ed2582d10be50967a98e3782"
     tag: ""
     pullPolicy: IfNotPresent
   initPacks:
@@ -282,11 +282,11 @@ images:
     digest: "sha256:defdcfc489c2229916849132f533fa4cb1479493ebe345814488aececb71a5a9"
     tag: "core-1.0.7"
     pullPolicy: IfNotPresent
-  # Compatible 0.11.0 agent injected into all pools; runtime image is separate.
+  # Compatible 0.11.1 agent injected into all pools; runtime image is separate.
   # See README for old-core-first rollout/drainage requirements.
   agent:
     repository: attune/agent
-    digest: "sha256:641bc7f5505b776624563bb247d3f82cfeb8eccef3240b13c7fde69d53e68abb"
+    digest: "sha256:24346320bee236e86e256a34f666359bf8c6c2a2db1c8c63c89060788e98ed4f"
     tag: ""
     pullPolicy: IfNotPresent
 

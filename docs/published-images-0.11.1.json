@@ -1,0 +1,145 @@
+{
+  "release": "0.11.1",
+  "source_revision": "46a80c7edf458c2dfa15461826fa3df269ebc6b2",
+  "release_url": "https://github.com/attune-system/attune/releases/tag/v0.11.1",
+  "publish_workflow": "https://github.com/attune-system/attune/actions/runs/44077458299",
+  "images": {
+    "api": {
+      "repository": "ghcr.io/attune-system/attune/api",
+      "tag": "0.11.1",
+      "digest": "sha256:f303cfdd4fc12a464f6e5172f538dc045cc4dd20dcc9c6d9ce94bd562901961c",
+      "platforms": {
+        "amd64": {
+          "digest": "sha256:3b8de798014e535b7347811a3932abf71066f6dfbfa9bc5a252280aa1dd6712b",
+          "config_digest": "sha256:8d892856e7975f1897127ca4bd08036d1bd70733186e130850117aa6851e1ce2",
+          "source_revision": "46a80c7edf458c2dfa15461826fa3df269ebc6b2"
+        },
+        "arm64": {
+          "digest": "sha256:12e68be42e450dfadd4207dd5df0ccfdfe72e3f928e696e8f890aa78d4ba020a",
+          "config_digest": "sha256:8c4a55e60a1e4fb8b56e97ef241d79e11c5eb5ff891e9c091234008908a450b1",
+          "source_revision": "46a80c7edf458c2dfa15461826fa3df269ebc6b2"
+        }
+      }
+    },
+    "executor": {
+      "repository": "ghcr.io/attune-system/attune/executor",
+      "tag": "0.11.1",
+      "digest": "sha256:9cb164659b914cb60d42e956580b0b863b4c0288bf9073e98a4957524240ee8f",
+      "platforms": {
+        "amd64": {
+          "digest": "sha256:248d2a8c91333dbfdc54168c6e6daff1e5966456abadea493b5d0fffcd9aa190",
+          "config_digest": "sha256:5599bddfbe6a6b8c8314086b8b869ffc7a2b20e6eb1c2528476a6dfc3db382c1",
+          "source_revision": "46a80c7edf458c2dfa15461826fa3df269ebc6b2"
+        },
+        "arm64": {
+          "digest": "sha256:7cd8fdbec64343f61907221600b3f873c1334a0d31a361949ffd4b4d5bf3272e",
+          "config_digest": "sha256:a395c79e2ba77a14e7d08686b5a8a0035a1a04c493cce8d2af962dac0fb14f10",
+          "source_revision": "46a80c7edf458c2dfa15461826fa3df269ebc6b2"
+        }
+      }
+    },
+    "notifier": {
+      "repository": "ghcr.io/attune-system/attune/notifier",
+      "tag": "0.11.1",
+      "digest": "sha256:4855e10fee7a33deca1a1cbf1feb91cc7498e94e6fd8ef7f790a7f99510554b1",
+      "platforms": {
+        "amd64": {
+          "digest": "sha256:83df837f45847170b0363d5b2ba2bd7d722758173908e7b6d3f3e501c2d13b0d",
+          "config_digest": "sha256:c5797c178d38a607ccadeb9e6443c5d8635c59aa0ad1f99902dc37c911a10da1",
+          "source_revision": "46a80c7edf458c2dfa15461826fa3df269ebc6b2"
+        },
+        "arm64": {
+          "digest": "sha256:5b20213d064298e14c2672ea6417e26f2b62bc642a1220b0d4cec6f4d8ec40a4",
+          "config_digest": "sha256:23c321094783bac19b3ab4d0afb2b45411ef6a166a6d65ef604b88d5fce30a56",
+          "source_revision": "46a80c7edf458c2dfa15461826fa3df269ebc6b2"
+        }
+      }
+    },
+    "supervisor": {
+      "repository": "ghcr.io/attune-system/attune/supervisor",
+      "tag": "0.11.1",
+      "digest": "sha256:8e388b6c442ad66b1d16e5f1fd1a1dbca251efed7042e7db4769469d973e759b",
+      "platforms": {
+        "amd64": {
+          "digest": "sha256:730d0bcf0ef3cc979a7154c4ccb5c017b14a5e4ef764411f074b2dae977f33c4",
+          "config_digest": "sha256:16489203d0aaa660e4dd1747e6422ab31a365ff136de8cfa368ca4cba8521aaa",
+          "source_revision": "46a80c7edf458c2dfa15461826fa3df269ebc6b2"
+        },
+        "arm64": {
+          "digest": "sha256:433ebae81f88d2468b5de052647f949f8c3ff7310c6bf3683334499bc49ca844",
+          "config_digest": "sha256:2d24d6c90125f957906e4d086e969d40926f7a4010b3a8c31a22fdf85c6d9b0b",
+          "source_revision": "46a80c7edf458c2dfa15461826fa3df269ebc6b2"
+        }
+      }
+    },
+    "agent": {
+      "repository": "ghcr.io/attune-system/attune/agent",
+      "tag": "0.11.1",
+      "digest": "sha256:24346320bee236e86e256a34f666359bf8c6c2a2db1c8c63c89060788e98ed4f",
+      "platforms": {
+        "amd64": {
+          "digest": "sha256:bc65e5c98f52f09f4ca5dd2169f4568033af60fbbc9232c9315d1ab3996858ea",
+          "config_digest": "sha256:59be1b1ee1458d7b6ba2a225be513adb00137aa304d85b031f19db3bd12b7a6b",
+          "source_revision": "46a80c7edf458c2dfa15461826fa3df269ebc6b2"
+        },
+        "arm64": {
+          "digest": "sha256:302aa28511cec11f705b58877e71db171598117a45cd0c7753bb9a4621ddbc77",
+          "config_digest": "sha256:a8c9b124b445ae5eed26faca97e1950d974ed769067def0a3d208566cdcfe7a8",
+          "source_revision": "46a80c7edf458c2dfa15461826fa3df269ebc6b2"
+        }
+      }
+    },
+    "web": {
+      "repository": "ghcr.io/attune-system/attune/web",
+      "tag": "0.11.1",
+      "digest": "sha256:4966b7f9f57be74a00f1c7b924c1b657aa27ffe574ac6166d0e65cbf6e82654c",
+      "platforms": {
+        "amd64": {
+          "digest": "sha256:07d847803f47bd9670f905a78419f07e85dc33e4366aee746cbd5af4a5715997",
+          "config_digest": "sha256:7ea444dacbc1f31634ea37e33999c885b83b808b2c1360b8d2e6d0687eebfd2e",
+          "source_revision": "46a80c7edf458c2dfa15461826fa3df269ebc6b2"
+        },
+        "arm64": {
+          "digest": "sha256:5ee70cc1665e21bbe3bd2dcaf3b9a205a148316d5048e08a8c83498f4ca015bc",
+          "config_digest": "sha256:5a1e65e80e7f25ab1a5717fe005dfa77484ad12fe27147319641abc74f9bcc89",
+          "source_revision": "46a80c7edf458c2dfa15461826fa3df269ebc6b2"
+        }
+      }
+    },
+    "migrations": {
+      "repository": "ghcr.io/attune-system/attune/migrations",
+      "tag": "0.11.1",
+      "digest": "sha256:3230606e2148c5bf522f6797f4a49f1723218abfe8f4a16769eab5e9eb545c80",
+      "platforms": {
+        "amd64": {
+          "digest": "sha256:5ba319e4712b1ac442d1273545e1f23ca1490a61a4ac8e2e6258a0524836f50b",
+          "config_digest": "sha256:95e4eb33d5a292ee0266b00a6394d4201b901d7973c3aca117210de84f390df1",
+          "source_revision": "46a80c7edf458c2dfa15461826fa3df269ebc6b2"
+        },
+        "arm64": {
+          "digest": "sha256:4cd3d604389158bd407050e0ac020bbb80acc1214b46143610fb3191939d9503",
+          "config_digest": "sha256:faa9dd8f2d6c735b1943e330e02151bfa4a6234a901abd9982b1e6168fde1079",
+          "source_revision": "46a80c7edf458c2dfa15461826fa3df269ebc6b2"
+        }
+      }
+    },
+    "init-user": {
+      "repository": "ghcr.io/attune-system/attune/init-user",
+      "tag": "0.11.1",
+      "digest": "sha256:1267e267768a61d90c6d42424aafa852f90d0ed5ed2582d10be50967a98e3782",
+      "platforms": {
+        "amd64": {
+          "digest": "sha256:c434a466e17fd39b0c8b37f6d55cacc2cf97ef659db9c30cc6e356c18e38adaa",
+          "config_digest": "sha256:dd9ba5c4e6dd8f61f5095297b704033e83fddd6eaef00abb8903a4fb0f78db03",
+          "source_revision": "46a80c7edf458c2dfa15461826fa3df269ebc6b2"
+        },
+        "arm64": {
+          "digest": "sha256:1c4dbc7c677376a665311b7a8d1af10a0a1638ff4951030322b67b86aacd6e66",
+          "config_digest": "sha256:280895dce9cbe83f89e4ff34f7108fd1431cb04773a4b64e61592bd1c2f48fb6",
+          "source_revision": "46a80c7edf458c2dfa15461826fa3df269ebc6b2"
+        }
+      }
+    }
+  },
+  "core_provenance": "published-images-0.11.0.json"
+}

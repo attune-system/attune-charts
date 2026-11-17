@@ -30,9 +30,22 @@ class Pins(unittest.TestCase):
         values = yaml.safe_load((ROOT / "charts/attune/values.yaml").read_text())
         record = yaml.safe_load((ROOT / "docs/published-images-0.11.0.json").read_text())
         current = values["global"]["imageTag"]
+        platform_record_path = ROOT / f"docs/published-images-{current}.json"
+        platform_record = (yaml.safe_load(platform_record_path.read_text())
+                           if platform_record_path.exists() else record)
+        if platform_record_path.exists():
+            self.assertEqual(platform_record["release"], current)
+            for published in platform_record["images"].values():
+                self.assertRegex(published["digest"], r"^sha256:[0-9a-f]{64}$")
+                self.assertEqual(set(published["platforms"]), {"amd64", "arm64"})
+                for platform in published["platforms"].values():
+                    self.assertEqual(platform["source_revision"], platform_record["source_revision"])
+                    self.assertRegex(platform["digest"], r"^sha256:[0-9a-f]{64}$")
+                    self.assertRegex(platform["config_digest"], r"^sha256:[0-9a-f]{64}$")
         for key, image in values["images"].items():
-            published = record["images"][image["repository"].split("/")[-1]]
-            if current == record["release"] or key == "initPacks":
+            selected = record if key == "initPacks" else platform_record
+            published = selected["images"][image["repository"].split("/")[-1]]
+            if current == selected["release"] or key == "initPacks":
                 self.assertEqual(image["digest"], published["digest"], key)
             else:
                 # The updater advances tags and clears stale platform digests;

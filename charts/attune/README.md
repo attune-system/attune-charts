@@ -11,12 +11,14 @@ This chart installs the Attune platform, including these components:
 The chart defaults target a small single-node k3s cluster. All platform
 Deployments use one replica, and shared claims use `ReadWriteOnce`.
 
-Chart `0.11.0` targets Attune `0.11.0` and core pack `1.0.7`, using the
+Chart `0.11.1` targets Attune `0.11.1` and core pack `1.0.7`, using the
 independently versioned `core-1.0.7` init-packs image. Defaults pin the published
 AMD64/ARM64 image indexes from release commit
-`67b2f572a75f5057e1dd5978258fd7910d2564c9`, including the compatible injected
-agent and init-user helper. [Published provenance](../../docs/published-images-0.11.0.json)
-records index/child/config digests and source labels. Digests override tags;
+`46a80c7edf458c2dfa15461826fa3df269ebc6b2`, including the compatible injected
+agent and init-user helper. [Published provenance](../../docs/published-images-0.11.1.json)
+records index/child/config digests and source labels. The independent core image
+and archive retain their [0.11.0 provenance](../../docs/published-images-0.11.0.json).
+Digests override tags;
 changing `global.imageTag` alone does not replace pinned binaries. Clear or replace
 the corresponding digest for an explicit image override. Keep API and agent code
 aligned. See [worker compatibility](#native-core-107-worker-compatibility).

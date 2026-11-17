@@ -1,5 +1,14 @@
 # Published images and owned acceptance
 
+Chart `0.11.1` selects published Attune `0.11.1` platform images, including the
+injected agent and init-user helper, by immutable AMD64/ARM64 index digest.
+[Platform provenance](published-images-0.11.1.json) records registry manifests,
+configs and source revision `46a80c7edf458c2dfa15461826fa3df269ebc6b2`. Core `1.0.7`,
+timer `0.7.5`, the init-packs image and canonical archive pins are unchanged.
+Registry metadata verification and chart checks do not establish live `0.11.1`
+execution or upgrade acceptance. The measured `0.11.0` results below remain
+historical evidence for that release.
+
 Chart `0.11.0` targets published Attune `0.11.0`, core `1.0.7` and timer `0.7.5`.
 Defaults select immutable AMD64/ARM64 OCI indexes, including the injected
 `images.agent` and `images.initUser`. [The provenance record](published-images-0.11.0.json)
