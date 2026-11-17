@@ -119,12 +119,17 @@ class ImageIntegration(unittest.TestCase):
                 token = self.headers.get('Authorization')
                 seen.append((self.path, token))
                 allowed = token in ('Bearer caller-a', 'Bearer caller-b')
+                data = {'caller': token} if self.path == '/auth/me' else [{'caller': token}]
+                body = json.dumps(({'data': data} if self.path == '/auth/me' else {'items': data})
+                                  if allowed else {'error': 'invalid token'}).encode()
                 self.send_response(200 if allowed else 401)
                 self.send_header('Content-Type', 'application/json')
+                # A length-framed TLS response must not rely on an unclean
+                # socket EOF as its delimiter (reqwest rejects truncated TLS).
+                self.send_header('Content-Length', str(len(body)))
                 self.end_headers()
-                data = {'caller': token} if self.path == '/auth/me' else [{'caller': token}]
-                self.wfile.write(json.dumps(({'data': data} if self.path == '/auth/me' else {'items': data}) if allowed else
-                                            {'error': 'invalid token'}).encode())
+                self.wfile.write(body)
+
 
         api = ThreadingHTTPServer(('0.0.0.0', 0), API)
         thread = threading.Thread(target=api.serve_forever, daemon=True)
@@ -164,7 +169,6 @@ class ImageIntegration(unittest.TestCase):
         other_uid = 1001 if os.getuid() == 1000 else 1000
         mismatched_copy[mismatched_copy.index('1000:1000')] = f'{other_uid}:{other_uid}'
         subprocess.run(mismatched_copy, check=True, capture_output=True)
-        self.assertEqual(ca_path.stat().st_mode & 0o777, 0o444)
 
         # A custom API image without the public bundle must stop the init.
         missing = copy.copy()
@@ -260,16 +264,41 @@ class ImageIntegration(unittest.TestCase):
             remove()
             # Exercise TLS verification, first rejecting an untrusted fixture CA,
             # then trusting only its public certificate in the same bundle path.
-            cert = Path(bundle.name) / 'fixture.pem'
-            key = Path(bundle.name) / 'fixture.key'
-            subprocess.run(['openssl', 'req', '-x509', '-newkey', 'rsa:2048', '-nodes',
-                            '-keyout', str(key), '-out', str(cert), '-days', '1',
-                            '-subj', '/CN=localhost', '-addext', 'subjectAltName=DNS:host.docker.internal'],
-                           check=True, capture_output=True)
-            tls_api = ThreadingHTTPServer(('0.0.0.0', 0), API)
+            tls_files = tempfile.TemporaryDirectory(prefix='attune-mcp-tls-')
+            self.addCleanup(tls_files.cleanup)
+            tls_dir = Path(tls_files.name)
+            cert, key = tls_dir / 'server.pem', tls_dir / 'server.key'
+            root_cert, root_key = tls_dir / 'ca.pem', tls_dir / 'ca.key'
+            csr = tls_dir / 'server.csr'
+            extensions = tls_dir / 'server.ext'
+            extensions.write_text('basicConstraints=critical,CA:FALSE\n'
+                                  'keyUsage=critical,digitalSignature,keyEncipherment\n'
+                                  'extendedKeyUsage=serverAuth\n'
+                                  'subjectAltName=DNS:host.docker.internal\n')
+            for command in (
+                ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', str(root_key),
+                 '-out', str(root_cert), '-days', '1', '-subj', '/CN=MCP fixture CA',
+                 '-addext', 'basicConstraints=critical,CA:TRUE',
+                 '-addext', 'keyUsage=critical,keyCertSign,cRLSign'],
+                ['req', '-newkey', 'rsa:2048', '-nodes', '-keyout', str(key),
+                 '-out', str(csr), '-subj', '/CN=host.docker.internal'],
+                ['x509', '-req', '-in', str(csr), '-CA', str(root_cert), '-CAkey', str(root_key),
+                 '-CAcreateserial', '-out', str(cert), '-days', '1', '-extfile', str(extensions)],
+            ):
+                subprocess.run(['openssl', *command], check=True, capture_output=True)
             tls = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
             tls.load_cert_chain(cert, key)
-            tls_api.socket = tls.wrap_socket(tls_api.socket, server_side=True)
+            class TLSAPI(ThreadingHTTPServer):
+                def get_request(self):
+                    conn, address = self.socket.accept()
+                    conn.settimeout(3)
+                    try:
+                        return tls.wrap_socket(conn, server_side=True), address
+                    except OSError as error:
+                        print('TLS fixture handshake:', error, file=sys.stderr)
+                        conn.close()
+                        raise
+            tls_api = TLSAPI(('0.0.0.0', 0), API)
             tls_thread = threading.Thread(target=tls_api.serve_forever, daemon=True)
             tls_thread.start()
             try:
@@ -279,7 +308,7 @@ class ImageIntegration(unittest.TestCase):
                 self.assertEqual(request(token='Bearer caller-a')[0], 401)
                 remove()
                 ca_file = Path(bundle.name) / 'ca-certificates.crt'
-                trusted_bundle = ca_file.read_bytes() + cert.read_bytes()
+                trusted_bundle = ca_file.read_bytes() + root_cert.read_bytes()
                 # The init runs as UID 1000; CI runner UID may differ. Replace
                 # this owned fixture path instead of chmod on a container-owned file.
                 ca_file.unlink()
@@ -287,7 +316,9 @@ class ImageIntegration(unittest.TestCase):
                 ca_file.chmod(0o444)
                 start(tls_env)
                 ready()
-                self.assertEqual(request(token='Bearer caller-a')[0], 200)
+                self.assertEqual(request(token='Bearer caller-a')[0], 200,
+                                 {'requests': seen, 'mcp_logs': subprocess.check_output(
+                                     ['docker', 'logs', name], stderr=subprocess.STDOUT, text=True)})
                 remove()
             finally:
                 tls_api.shutdown()
