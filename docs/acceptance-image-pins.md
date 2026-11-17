@@ -1,10 +1,12 @@
 # Published images and owned acceptance
 
-Chart `0.11.1` selects published Attune `0.11.1` platform images, including the
+Chart `0.11.2` selects published Attune `0.11.1` platform images, including the
 injected agent and init-user helper, by immutable AMD64/ARM64 index digest.
 [Platform provenance](published-images-0.11.1.json) records registry manifests,
-configs and source revision `46a80c7edf458c2dfa15461826fa3df269ebc6b2`. Core `1.0.7`,
-timer `0.7.5`, the init-packs image and canonical archive pins are unchanged.
+configs, source revision `46a80c7edf458c2dfa15461826fa3df269ebc6b2`, and the
+canonical archive digest for core `1.0.8`. The init-packs image is `core-1.0.8`;
+timer remains `0.7.5`. Chart `0.11.1` incorrectly retained core `1.0.7`.
+Use chart `0.11.2` for the matching application/core release.
 Registry metadata verification and chart checks do not establish live `0.11.1`
 execution or upgrade acceptance. The measured `0.11.0` results below remain
 historical evidence for that release.
@@ -45,10 +47,10 @@ For a staged forward upgrade, recover a genuine OLD tuple from historical publis
 do not seed the new release and call absent components retired:
 
 1. Preserve OLD `corePack.version`, canonical `corePack.digest`, and init-packs
-   tag/digest. Roll compatible `0.11.0` services and injected agent first. Verify
+   tag/digest. Roll compatible `0.11.1` services and injected agent first. Verify
    rollout, old workers drained/terminated and dispatch eligibility, then old-core
    execution on the new workers, before core activation.
-2. Keep those compatible worker pins and activate the selected core `1.0.7` image.
+2. Keep those compatible worker pins and activate the selected core `1.0.8` image.
    Verify four native executions including HTTP, retirement/preservation inventories,
    old-release pins/history, failure preservation and rollback boundaries.
 

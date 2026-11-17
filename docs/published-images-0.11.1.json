@@ -139,7 +139,50 @@
           "source_revision": "46a80c7edf458c2dfa15461826fa3df269ebc6b2"
         }
       }
+    },
+    "init-packs": {
+      "repository": "ghcr.io/attune-system/attune/init-packs",
+      "tag": "core-1.0.8",
+      "digest": "sha256:92b52f9db7991bac65d4abaf34e5d962262f353598e1d33e82e6d81344ca187a",
+      "platforms": {
+        "amd64": {
+          "digest": "sha256:b230199ef7da0d066e3ab76155323f33068d79271397d72ad4526e47476b67fb",
+          "config_digest": "sha256:d500b27643d040297861ca088963d951638af603c54e0b3b0b0ae3a000d47794",
+          "source_revision": "46a80c7edf458c2dfa15461826fa3df269ebc6b2"
+        },
+        "arm64": {
+          "digest": "sha256:fbcaf00cf7f40df4c1682dc5c02b076b032e2e76b4288343a88abedc6d6ab482",
+          "config_digest": "sha256:47d59164016f669bf662f9e47b834d5b202c8489389eca9b66c3956d59b192a1",
+          "source_revision": "46a80c7edf458c2dfa15461826fa3df269ebc6b2"
+        }
+      }
     }
   },
-  "core_provenance": "published-images-0.11.0.json"
+  "release_core_version": "1.0.8",
+  "core_source_manifest": "https://github.com/attune-system/attune/blob/v0.11.1/packs/core/pack.yaml",
+  "core_archive": {
+    "version": "1.0.8",
+    "timer_version": "0.7.5",
+    "sha256": "77088ba9bc6dbaaff5dbdb450e32eddcc95b561f6d9b7a2b0bfe8b263f990010",
+    "size_bytes": 13588616,
+    "source_revision": "46a80c7edf458c2dfa15461826fa3df269ebc6b2",
+    "measurement": "Canonical deterministic tar/gzip assembled from /source/packs/core extracted from the published init-packs OCI digest, using the v0.11.1 PackStorage archive algorithm and release compression backend; not an API activation or live execution test.",
+    "archive_implementation": "https://github.com/attune-system/attune/blob/v0.11.1/crates/common/src/pack_registry/storage.rs",
+    "compression": {
+      "flate2": "1.1.10",
+      "backend": "zlib-rs 0.6.7",
+      "level": "best",
+      "tar": "0.4.46"
+    },
+    "historical_control": {
+      "core_version": "1.0.7",
+      "image_digest": "sha256:defdcfc489c2229916849132f533fa4cb1479493ebe345814488aececb71a5a9",
+      "reproduced_archive_sha256": "82a032962e28cf288a77e23273202e021428550cd655ba2c7776f3a98281e638"
+    },
+    "native_payload_architectures": [
+      "linux-amd64",
+      "linux-arm64"
+    ],
+    "not_an_OCI_or_source_upload_digest": true
+  }
 }

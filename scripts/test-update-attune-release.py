@@ -21,7 +21,7 @@ class ReleaseUpdateTests(unittest.TestCase):
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(ROOT / name, target)
             shutil.copytree(ROOT / "charts/attune", root / "charts/attune", dirs_exist_ok=True)
-            for name in ("scripts/test-acceptance-image-pins.py", "scripts/verify.sh", "docs/published-images-0.11.0.json"):
+            for name in ("scripts/test-acceptance-image-pins.py", "scripts/verify.sh", "docs/published-images-0.11.0.json", "docs/published-images-0.11.1.json"):
                 target = root / name
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(ROOT / name, target)

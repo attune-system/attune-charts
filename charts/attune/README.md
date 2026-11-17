@@ -11,13 +11,13 @@ This chart installs the Attune platform, including these components:
 The chart defaults target a small single-node k3s cluster. All platform
 Deployments use one replica, and shared claims use `ReadWriteOnce`.
 
-Chart `0.11.1` targets Attune `0.11.1` and core pack `1.0.7`, using the
-independently versioned `core-1.0.7` init-packs image. Defaults pin the published
+Chart `0.11.2` targets Attune `0.11.1` and core pack `1.0.8`, using the
+independently versioned `core-1.0.8` init-packs image. Defaults pin the published
 AMD64/ARM64 image indexes from release commit
 `46a80c7edf458c2dfa15461826fa3df269ebc6b2`, including the compatible injected
 agent and init-user helper. [Published provenance](../../docs/published-images-0.11.1.json)
-records index/child/config digests and source labels. The independent core image
-and archive retain their [0.11.0 provenance](../../docs/published-images-0.11.0.json).
+records index/child/config digests, source labels and the canonical core archive
+digest for this release.
 Digests override tags;
 changing `global.imageTag` alone does not replace pinned binaries. Clear or replace
 the corresponding digest for an explicit image override. Keep API and agent code
@@ -900,6 +900,12 @@ consistent set.
 
 ### Native core 1.0.7 worker compatibility
 
+Chart `0.11.2` selects Attune `0.11.1` and its published core `1.0.8`.
+The rollout requirements below still apply; the measured `0.11.0` / core `1.0.7`
+acceptance results are historical and do not establish live `1.0.8` acceptance.
+Chart `0.11.1` retained core `1.0.7` in error; use `0.11.2` for the matching
+application and core release.
+
 Attune `0.11.0` includes native directory selection and all coordinated security
 fixes through its release commit. Defaults now select the actual published
 compatible injected agent, rather than the incompatible stock `0.10.4` agent.
@@ -921,10 +927,10 @@ runtime, sensor or IAM settings:
 
 1. Keep the currently admitted OLD core release: preserve its `corePack.version`,
    `corePack.digest`, `images.initPacks.tag` and `images.initPacks.digest`. Roll out
-   the pinned `0.11.0` injected agent and coordinated service images. Wait for all worker rollouts to complete, old Pods
+   the pinned `0.11.1` injected agent and coordinated service images. Wait for all worker rollouts to complete, old Pods
    to terminate, and old/external workers to drain or be removed from dispatch.
    Verify old-core execution on the new code before proceeding.
-2. Retain those compatible worker pins, then select core `1.0.7` and its actual
+2. Retain those compatible worker pins, then select core `1.0.8` and its actual
    compatible init-packs artifact, using measured image/archive digests when
    available. Verify native execution and the removal/preservation inventories.
 
@@ -995,11 +1001,11 @@ contract, not authenticated publication. No chart flag enables that gate, remove
 registrar checks or creates a deployment credential.
 
 `corePack.digest` pins the measured canonical published core archive
-`82a032962e28cf288a77e23273202e021428550cd655ba2c7776f3a98281e638`.
+`77088ba9bc6dbaaff5dbdb450e32eddcc95b561f6d9b7a2b0bfe8b263f990010`.
 It includes both architectures' native action binaries and is separate from the
 OCI index digest and the Python publisher's source-upload tarball hash. The
-[provenance record](../../docs/published-images-0.11.0.json) binds it to the
-published `0.11.0` source. Overrides must use the actual canonical archive for
+[provenance record](../../docs/published-images-0.11.1.json) binds it to the
+published `0.11.1` source. Overrides must use the actual canonical archive for
 the selected candidate, not a pre-release local producer checksum.
 
 Before installation, record the source revision and measured OCI manifest digest
@@ -1008,7 +1014,7 @@ agent. Verify the live publication contract above and the init-packs image's
 `/scripts/bootstrap_core_pack.py` exports `BOOTSTRAP_CLIENT_VERSION=1`,
 `BOOTSTRAP_REVISION=authenticated-pack-publication-1`, `BOOTSTRAP_COMPONENTS`
 equal to the two components, and callable `publish_core`. The image must provide
-Python 3 and PyYAML for publication only, core `1.0.7` metadata, and musl-linked
+Python 3 and PyYAML for publication only, core `1.0.8` metadata, and musl-linked
 AMD64/ARM64 binaries for exactly four native actions: `core.echo`, `core.sleep`,
 `core.noop` and `core.http_request` (eight ELF payloads total). All four must run
 directly in native full worker pools without curl, Python or shell action-runtime
@@ -1018,8 +1024,8 @@ source tests, and ordinary HTTP success does not establish TLS deployment readin
 Record the canonical release-archive checksum separately from its image digest.
 Supply an existing registrar-authorized integration token in the selected Secret.
 
-Core `1.0.7` / timer `0.7.5` are shipped in the published `0.11.0` release.
-The selected `init-packs:core-1.0.7` index and both architecture-specific configs
+Core `1.0.8` / timer `0.7.5` are shipped in the published `0.11.1` release.
+The selected `init-packs:core-1.0.8` index and both architecture-specific configs
 were measured from public GHCR and identify the release commit. No release
 publication is required by this chart update. See the
 [published-source acceptance contract](../../docs/acceptance-image-pins.md).
@@ -1034,13 +1040,13 @@ an earlier local producer's core checksum.
 
 Historical local `BUILT_NOT_DEPLOYED` acceptance receipts prove their exact source
 and bytes only. The earlier b8 and mixed-source fresh results cannot establish
-acceptance of these published `0.11.0` images. Likewise, image architecture
+acceptance of these published `0.11.1` images. Likewise, image architecture
 metadata is not ARM execution, RWX or proxy/TLS/provider-failure validation.
 
 The chart delegates the deployment payload to the image's `publish_core(base,
 pack_dir)` helper; it does not set metadata removal policy itself. The bundled
 helper must explicitly send scalar multipart `absent_metadata_policy=remove`
-when activating core `1.0.7`. This policy applies across the pack and has no
+when activating core `1.0.8`. This policy applies across the pack and has no
 component selector. The coordinated candidate and publisher must retire core
 action callables other than `echo`, `sleep`, `noop` and `http_request` while
 preserving unrelated metadata, runtimes, sensors, IAM sets and dashboards.

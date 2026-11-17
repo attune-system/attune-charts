@@ -28,7 +28,7 @@ class Pins(unittest.TestCase):
 
     def test_current_release_selection(self):
         values = yaml.safe_load((ROOT / "charts/attune/values.yaml").read_text())
-        record = yaml.safe_load((ROOT / "docs/published-images-0.11.0.json").read_text())
+        record = yaml.safe_load((ROOT / "docs/published-images-0.11.1.json").read_text())
         current = values["global"]["imageTag"]
         platform_record_path = ROOT / f"docs/published-images-{current}.json"
         platform_record = (yaml.safe_load(platform_record_path.read_text())
@@ -54,7 +54,9 @@ class Pins(unittest.TestCase):
                                    tuple(map(int, record["release"].split("."))))
                 self.assertEqual(image["digest"], "", key)
         self.assertEqual(values["corePack"]["digest"], record["core_archive"]["sha256"])
-        self.assertEqual(str(values["corePack"]["version"]), "1.0.7")
+        self.assertEqual(str(values["corePack"]["version"]), record["core_archive"]["version"])
+        self.assertEqual(values["images"]["initPacks"]["tag"], "core-" + record["core_archive"]["version"])
+        self.assertEqual(record["release_core_version"], record["core_archive"]["version"])
 
     def test_platform_override_does_not_retag_core_publication_or_wait(self):
         values = yaml.safe_load((ROOT / "charts/attune/values.yaml").read_text())
@@ -72,7 +74,7 @@ class Pins(unittest.TestCase):
             self.assertEqual(container["image"], "ghcr.io/attune-system/attune/init-packs@" +
                              values["images"]["initPacks"]["digest"])
             env = {item["name"]: item.get("value") for item in container["env"]}
-            self.assertEqual(env["ATTUNE_CORE_PACK_VERSION"], "1.0.7")
+            self.assertEqual(env["ATTUNE_CORE_PACK_VERSION"], values["corePack"]["version"])
             self.assertEqual(env["ATTUNE_CORE_PACK_DIGEST"], values["corePack"]["digest"])
         api = next(doc for doc in documents if doc["kind"] == "Deployment"
                    and doc["spec"]["template"]["metadata"]["labels"].get("app.kubernetes.io/component") == "api")

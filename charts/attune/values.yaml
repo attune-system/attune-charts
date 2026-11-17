@@ -279,8 +279,8 @@ images:
     pullPolicy: IfNotPresent
   initPacks:
     repository: attune/init-packs
-    digest: "sha256:defdcfc489c2229916849132f533fa4cb1479493ebe345814488aececb71a5a9"
-    tag: "core-1.0.7"
+    digest: "sha256:92b52f9db7991bac65d4abaf34e5d962262f353598e1d33e82e6d81344ca187a"
+    tag: "core-1.0.8"
     pullPolicy: IfNotPresent
   # Compatible 0.11.1 agent injected into all pools; runtime image is separate.
   # See README for old-core-first rollout/drainage requirements.
@@ -295,10 +295,10 @@ corePack:
   # Empty secret name uses security.existingSecret/the chart security secret.
   deploymentTokenSecret: ""
   deploymentTokenKey: ATTUNE_BOOTSTRAP_TOKEN
-  version: "1.0.7"
-  # Actual published 0.11.0 canonical core archive, including both native arches.
+  version: "1.0.8"
+  # Published 0.11.1 canonical core 1.0.8 archive, including both native arches.
   # Separate from OCI image/source-upload digests; see published provenance.
-  digest: "82a032962e28cf288a77e23273202e021428550cd655ba2c7776f3a98281e638"
+  digest: "77088ba9bc6dbaaff5dbdb450e32eddcc95b561f6d9b7a2b0bfe8b263f990010"
   # Both storage modes use API admission. Optional upgrades use a normal Job;
   # required upgrades use a post-upgrade hook after target API Pods are ready.
   requiredOnUpgrade: false
