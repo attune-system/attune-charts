@@ -229,7 +229,7 @@ class ImageIntegration(unittest.TestCase):
                 self.assertEqual(status, 200)
                 self.assertIn(caller, body.decode())
                 self.assertNotIn('caller-b' if caller == 'caller-a' else 'caller-a', body.decode())
-            self.assertTrue(all(path == '/auth/me' or path.startswith('/events?') for path, _ in seen))
+            self.assertTrue(all(path == '/auth/me' or path.startswith('/api/v1/events?') for path, _ in seen))
             remove()
             custom = environment(container(render({'mcp': {'enabled': True, 'http': {
                 'hosts': ['mcp.example.com'], 'origins': ['https://console.example.com']}}})))
