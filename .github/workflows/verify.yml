@@ -4,6 +4,12 @@ on:
   pull_request:
   push:
     branches: [main]
+  workflow_call:
+    inputs:
+      ref:
+        description: Immutable generated PR head to validate
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -19,7 +25,10 @@ jobs:
           - v4.2.3
     name: Verify with Helm ${{ matrix.helm-version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          persist-credentials: false
       - uses: azure/setup-helm@v4
         with:
           version: ${{ matrix.helm-version }}
@@ -31,3 +40,13 @@ jobs:
           docker pull mirror.gcr.io/alpine/helm:3.16.1@sha256:e057182827e6273fc7e64b8b2b8809cbb71d84e0dd0f88310712f45879854062
           docker tag mirror.gcr.io/alpine/helm:3.16.1@sha256:e057182827e6273fc7e64b8b2b8809cbb71d84e0dd0f88310712f45879854062 alpine/helm:3.16.1
       - run: ./scripts/verify.sh
+
+  gate:
+    name: Chart validation
+    if: always()
+    needs: verify
+    runs-on: ubuntu-24.04
+    steps:
+      - env:
+          RESULT: ${{ needs.verify.result }}
+        run: test "$RESULT" = success
