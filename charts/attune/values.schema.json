@@ -503,20 +503,24 @@
     "mcp": {
       "type": "object",
       "additionalProperties": true,
-      "required": ["enabled", "replicaCount", "service", "auth"],
+      "required": ["enabled", "replicaCount", "service", "http"],
       "properties": {
         "enabled": { "type": "boolean" },
         "replicaCount": { "$ref": "#/definitions/replicas" },
         "service": { "$ref": "#/definitions/service" },
-        "auth": {
+        "http": {
           "type": "object",
-          "additionalProperties": true,
-          "required": ["useBootstrapTestUser", "loginKey", "passwordKey"],
+          "additionalProperties": false,
+          "required": ["hosts", "origins"],
           "properties": {
-            "useBootstrapTestUser": { "type": "boolean" },
-            "existingSecret": { "type": "string" },
-            "loginKey": { "$ref": "#/definitions/secretKey" },
-            "passwordKey": { "$ref": "#/definitions/secretKey" }
+            "hosts": {
+              "type": "array", "uniqueItems": true,
+              "items": { "type": "string", "minLength": 1, "pattern": "^[^*,\\s]+$" }
+            },
+            "origins": {
+              "type": "array", "uniqueItems": true,
+              "items": { "type": "string", "minLength": 1, "pattern": "^[^*,\\s]+$" }
+            }
           }
         },
         "resources": { "$ref": "#/definitions/resources" }

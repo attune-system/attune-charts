@@ -550,12 +550,22 @@ spec:
       annotations:
         attune.dev/release-revision: {{ .Release.Revision | quote }}
     spec:
-      {{- include "attune.podSecurityContext" (dict "root" .) | nindent 6 }}
+      {{- include "attune.podSecurityContext" (dict "root" . "override" (dict "fsGroup" .Values.workloadSecurity.identities.attune.runAsGroup)) | nindent 6 }}
       {{- if .Values.global.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml .Values.global.imagePullSecrets | nindent 8 }}
       {{- end }}
       initContainers:
+        - name: prepare-ca-bundle
+          image: {{ include "attune.image" (dict "root" . "image" .Values.images.api) | quote }}
+          imagePullPolicy: {{ .Values.images.api.pullPolicy | quote }}
+          {{- include "attune.containerSecurityContext" (dict "root" . "identity" "attune") | nindent 10 }}
+          command: ["/bin/sh", "-ec"]
+          args:
+            - 'test -s /etc/ssl/certs/ca-certificates.crt; cp /etc/ssl/certs/ca-certificates.crt /ca-bundle/ca-certificates.crt; chmod 0444 /ca-bundle/ca-certificates.crt'
+          volumeMounts:
+            - name: ca-bundle
+              mountPath: /ca-bundle
         - name: wait-for-api
           image: busybox:1.36
           {{- include "attune.containerSecurityContext" (dict "root" . "identity" "helper") | nindent 10 }}
@@ -574,6 +584,10 @@ spec:
           imagePullPolicy: {{ .Values.images.mcp.pullPolicy | quote }}
           {{- include "attune.containerSecurityContext" (dict "root" . "identity" "attune") | nindent 10 }}
           command: ["/usr/local/bin/attune-mcp"]
+          volumeMounts:
+            - name: ca-bundle
+              mountPath: /etc/ssl/certs
+              readOnly: true
           env:
             - name: ATTUNE_API_URL
               value: {{ printf "http://%s:%v" (include "attune.apiServiceName" .) .Values.api.service.port | quote }}
@@ -581,28 +595,11 @@ spec:
               value: http
             - name: ATTUNE_MCP_LISTEN_ADDR
               value: {{ printf "0.0.0.0:%v" .Values.mcp.service.port | quote }}
-            {{- if .Values.mcp.auth.useBootstrapTestUser }}
-            - name: ATTUNE_LOGIN
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "attune.secretName" . | quote }}
-                  key: "TEST_LOGIN"
-            - name: ATTUNE_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "attune.secretName" . | quote }}
-                  key: "TEST_PASSWORD"
-            {{- else }}
-            - name: ATTUNE_LOGIN
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.mcp.auth.existingSecret | quote }}
-                  key: {{ .Values.mcp.auth.loginKey | quote }}
-            - name: ATTUNE_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.mcp.auth.existingSecret | quote }}
-                  key: {{ .Values.mcp.auth.passwordKey | quote }}
+            - name: ATTUNE_MCP_HTTP_HOSTS
+              value: {{ join "," (default (list (printf "%s:%v" (include "attune.mcpServiceName" .) .Values.mcp.service.port)) .Values.mcp.http.hosts) | quote }}
+            {{- if .Values.mcp.http.origins }}
+            - name: ATTUNE_MCP_HTTP_ORIGINS
+              value: {{ join "," .Values.mcp.http.origins | quote }}
             {{- end }}
           ports:
             - name: http
@@ -621,4 +618,8 @@ spec:
             periodSeconds: 15
           resources:
             {{- toYaml .Values.mcp.resources | nindent 12 }}
+      volumes:
+        - name: ca-bundle
+          emptyDir:
+            sizeLimit: 2Mi
 {{- end }}

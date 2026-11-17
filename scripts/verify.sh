@@ -9,6 +9,7 @@ python3 "$root_dir/scripts/test-native-postgresql.py"
 python3 "$root_dir/scripts/test-site-community-links.py"
 python3 "$root_dir/scripts/test-bootstrap-admission.py"
 python3 "$root_dir/scripts/test-acceptance-image-pins.py"
+python3 "$root_dir/scripts/test-mcp-http.py" --integration
 render_dir="$(mktemp -d)"
 repository_url="packages"
 attune_version="$(awk -F '"' '/^appVersion:/ { print $2; exit }' "$root_dir/charts/attune/Chart.yaml")"

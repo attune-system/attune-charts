@@ -362,12 +362,12 @@ mcp:
   service:
     type: ClusterIP
     port: 8090
-  auth:
-    useBootstrapTestUser: true
-    # Required when useBootstrapTestUser is false.
-    existingSecret: ""
-    loginKey: ATTUNE_LOGIN
-    passwordKey: ATTUNE_PASSWORD
+  http:
+    # Exact Host authorities, including port when sent by the client. Empty uses
+    # the MCP Service name and service.port. Overrides replace this default.
+    hosts: []
+    # Exact browser Origins. Empty denies all requests carrying Origin.
+    origins: []
   resources: {}
 
 web:
