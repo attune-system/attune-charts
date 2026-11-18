@@ -5,7 +5,7 @@ publishes charts for the Attune platform and its public sites.
 
 | Chart | Version | Purpose |
 | --- | --- | --- |
-| `attune` | `0.11.3` | Attune services, workers, PostgreSQL, and RabbitMQ |
+| `attune` | `0.11.4` | Attune services, workers, PostgreSQL, and RabbitMQ |
 | `attune-site` | `0.1.7` | `attunedev.org` and its inquiry form |
 | `attune-docs-site` | `0.1.6` | `docs.attunedev.org` |
 
@@ -37,10 +37,14 @@ https://github.com/attune-system/attune-charts.git
 
 ## Install a chart
 
-Chart `0.11.3` targets Attune `0.11.1` and the independently pinned core pack
-`1.0.8`. Defaults select published, immutable multiarch `0.11.1` service and
-injected-agent images, plus the independently versioned `core-1.0.8` init-packs
-image. See the [published image provenance](docs/published-images-0.11.1.json) and
+Chart `0.11.4` targets Attune `0.11.1` metadata only. This draft companion stacks on approved
+[PR12](https://github.com/attune-system/attune-charts/pull/12), exact head
+`377d6613df4c0eda51428116c9e575688ad97125`. It preserves the MCP configuration,
+published service pins and independently pinned core pack `1.0.8`. The execution-only
+worker contract requires matching source-built API/controller/agent images, an
+external colocated Engine/controller pair and CP-issued per-slot enrollment.
+Current published `0.11.1` pins cannot provide a supported default installation;
+this companion remains draft/dependency-blocked. No new published digest is assumed. See the [published image provenance](docs/published-images-0.11.1.json) and
 [worker compatibility and staged rollout](charts/attune/README.md#native-core-107-worker-compatibility)
 requirements. Supply an existing registrar-authorized deployment token in the Secret
 selected by `corePack.deploymentTokenSecret` and `corePack.deploymentTokenKey`.
@@ -63,10 +67,18 @@ git clone https://github.com/attune-system/attune-charts.git
 cd attune-charts
 ```
 
-CloudNativePG with bundled RabbitMQ is the default:
+CloudNativePG with bundled RabbitMQ is the default. First provision the remote
+CP/controller/Engine pair and two distinct CP-issued enrollment Secrets. Set
+`CP_ORIGIN` and `VALIDATED_WORKLOAD_AGENT_DIGEST` to your actual compatible source
+images/deployment; the generator cannot mint enrollment or supply a published image
+that does not exist. Include these four workload options in every generator call:
 
 ```bash
 ./scripts/generate-attune-setup.sh \
+  --workload-api-url "$CP_ORIGIN" \
+  --workload-agent-digest "$VALIDATED_WORKLOAD_AGENT_DIGEST" \
+  --action-enrollment-secret action-host-enrollment \
+  --sensor-enrollment-secret sensor-host-enrollment \
   --storage-class longhorn \
   --shared-storage-rwx-class longhorn \
   --database-size 100Gi
@@ -79,7 +91,8 @@ This mode creates `attune-setup/namespace.yaml`, `secrets.yaml`,
 commands in order. Install the CloudNativePG operator before applying the
 generated `postgresql.yaml`.
 
-Chart `0.11.3` targets Attune `0.11.1` without the TimescaleDB dependency.
+The retained `0.11.1` service provenance has no TimescaleDB dependency; matching
+launch/host API images are still required for this draft worker contract.
 Use it for fresh native PostgreSQL installations. Upgrades refuse a database
 with the TimescaleDB extension before provisioning, migrations, or StatefulSet
 changes. Converting populated TimescaleDB installations is not supported.

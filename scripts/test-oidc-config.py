@@ -25,7 +25,7 @@ def read_yaml(content: str, expression: str, all_documents: bool = False):
 
 
 def render(*settings: str) -> list[dict]:
-    command = ["helm", "template", "oidc-test", str(CHART)]
+    command = ["helm", "template", "oidc-test", str(CHART), "--values", str(Path(__file__).resolve().parent.parent / "charts/attune/ci/workload-host-values.yaml")]
     for setting in ["security.existingSecret=runtime-test", *settings]:
         command.extend(["--set", setting])
     result = subprocess.run(command, check=True, capture_output=True, text=True)

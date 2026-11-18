@@ -395,81 +395,49 @@ web:
             pathType: Prefix
     tls: []
 
-# Agent-based runtime pools
-# These deploy the universal worker and sensor agents into operator-selected
-# runtime images instead of baking dedicated Attune worker binaries into each image.
-#
-# Each entry creates a separate Deployment with an `init-agent` init container
-# that copies the statically-linked agent binaries into an EmptyDir volume.
-# The main container then executes the mounted binary from /opt/attune/agent.
-#
-# Supported fields per pool entry:
-#   name             (required) - Unique name for this worker (used in resource names)
-#   image            (required) - Container image with your desired runtime(s)
-#   replicas         (optional) - Number of pod replicas (default: 1)
-#   runtimes         (optional) - List of runtimes to expose; [] = auto-detect
-#   resources        (optional) - Kubernetes resource requests/limits
-#   env              (optional) - Kubernetes env entries; use secretKeyRef for secrets
-#   podSecurityContext       (optional) - Overrides shared Pod security fields
-#   containerSecurityContext (optional) - Overrides shared worker container fields
-#   imagePullPolicy  (optional) - Pull policy for the worker image
-#   logLevel         (optional) - RUST_LOG level (default: "info")
-#   runtimeClassName (optional) - Kubernetes RuntimeClass (e.g., "nvidia" for GPU)
-#   nodeSelector     (optional) - Node selector map for pod scheduling
-#   tolerations      (optional) - Tolerations list for pod scheduling
-#   stopGracePeriod  (optional) - Termination grace period in seconds (default: 45)
-#   maxDatabaseConnections (optional) - Database pool budget per worker Pod (default: 5)
-#   passthroughEnv   (optional) - Exact service environment names exposed to pack processes
-#
-# Default action workers mirror the Docker Compose agent deployment model.
+# Execution-only hosts: packs run on the CP-admitted external Docker engine,
+# never in these Pods. No engine socket/SA/DB/MQ/master credential is mounted.
+# There is no compatible published agent pin here yet. Supply an actual tested
+# image digest implementing the offline attune-workload-host-v1 probe; the chart
+# intentionally rejects the older published agent pin and legacy host settings.
+workloadLaunch:
+  apiUrl: "" # Required HTTPS CP origin, no /api/v1 suffix.
+  agentImage:
+    repository: attune/agent
+    digest: "" # Required actual validated image; no fabricated release pin.
+    tag: ""
+    pullPolicy: IfNotPresent
+
+# One logical host per item. CP provisions a unique enrollment Secret for each;
+# replicas > 1 and shared enrollment/custody are rejected. Add separate slots.
+# Recreate avoids surge/overlap. Custody PVCs are retained on release removal;
+# retire them manually only after delivery completes/expires and host withdraws.
+# Runtime capabilities, placement, image and controller origin come from the
+# persisted CP profile, not this host image or caller environment.
 actionWorkers:
   - name: full
-    image: nikolaik/python-nodejs:python3.12-nodejs22-slim
+    image: debian@sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587
     replicas: 1
-    maxDatabaseConnections: 5
-    runtimes: [shell, python, node, native]
-    passthroughEnv: []
-    podSecurityContext: {}
-    containerSecurityContext: {}
+    enrollmentSecret:
+      name: ""
+      key: token
+    custody:
+      existingClaim: ""
+      storageClassName: ""
+      size: 1Gi
+    stopGracePeriod: 120
     resources: {}
 
-# Default sensor workers include at least one Python+Node.js runtime image.
 sensorWorkers:
   - name: default
-    image: nikolaik/python-nodejs:python3.12-nodejs22-slim
+    image: debian@sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587
     replicas: 1
-    maxDatabaseConnections: 5
-    runtimes: [shell, python, node, native]
-    passthroughEnv: []
-    logLevel: debug
-    # The default notifier endpoint is plaintext inside the cluster network.
-    allowInsecureNotifierWs: true
-    podSecurityContext: {}
-    containerSecurityContext: {}
+    enrollmentSecret:
+      name: ""
+      key: token
+    custody:
+      existingClaim: ""
+      storageClassName: ""
+      size: 1Gi
+    stopGracePeriod: 120
     resources: {}
-
-# Example values for heterogeneous runtime pools:
-#
-# actionWorkers:
-#   - name: python312
-#     image: python:3.12-slim
-#     replicas: 1
-#     runtimes: [python, shell]
-#   - name: python314
-#     image: python:3.14-rc-slim
-#     replicas: 1
-#     runtimes: [python, shell]
-#   - name: nodejs
-#     image: node:22-slim
-#     replicas: 1
-#     runtimes: [node, shell]
-#
-# sensorWorkers:
-#   - name: java
-#     image: eclipse-temurin:21-jre
-#     replicas: 1
-#     runtimes: [java, shell]
-#   - name: js-python
-#     image: nikolaik/python-nodejs:python3.12-nodejs22-slim
-#     replicas: 1
-#     runtimes: [python, node, shell, native]

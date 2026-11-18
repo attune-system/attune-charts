@@ -33,6 +33,7 @@ def render(values=None, chart=None):
         path = Path(directory) / 'values.yaml'
         path.write_text(yaml.safe_dump(values or {}))
         return subprocess.run(['helm', 'template', 'mcp-test', str(chart or ROOT / 'charts/attune'),
+                               '-f', str(ROOT / 'charts/attune/ci/workload-host-values.yaml'),
                                '--set', 'security.existingSecret=runtime', '-f', str(path)],
                               capture_output=True, text=True)
 

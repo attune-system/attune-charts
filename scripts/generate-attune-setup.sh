@@ -29,6 +29,10 @@ ingress_host=""
 ingress_class="nginx"
 ingress_tls_secret=""
 output_dir="attune-setup"
+workload_api_url=""
+workload_agent_digest=""
+action_enrollment_secret=""
+sensor_enrollment_secret=""
 force=false
 rotate_secrets=false
 bootstrap_password_changed=false
@@ -75,6 +79,13 @@ Options:
   --ingress-tls-secret NAME
                          Existing TLS Secret for the ingress hostname
   --output-dir PATH      Destination directory (default: attune-setup)
+  --workload-api-url URL HTTPS origin of the remote launch/host control plane
+  --workload-agent-digest SHA
+                         Actual validated execution-only agent image digest
+  --action-enrollment-secret NAME
+                         Existing CP-issued action-host enrollment Secret
+  --sensor-enrollment-secret NAME
+                         Different CP-issued sensor-host enrollment Secret
   --force                Regenerate files while preserving saved credentials
   --rotate-secrets       Replace secrets.yaml with newly generated credentials
   --confirm-bootstrap-password-changed
@@ -94,7 +105,11 @@ Regeneration:
   The generator stores credentials in an ignored credentials.state file.
   --force reuses that file. --rotate-secrets replaces every credential.
 
-Examples:
+Every invocation that writes files requires the four workload options above.
+They name a real compatible deployment and existing CP-issued Secrets; this
+generator does not provision a controller/Engine, mint enrollment or invent pins.
+
+Examples (also supply the four workload options):
   ./scripts/generate-attune-setup.sh
   ./scripts/generate-attune-setup.sh --namespace production --release attune-prod \
     --storage-class longhorn --database-size 100Gi
@@ -246,6 +261,14 @@ load_credentials() {
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --workload-api-url)
+      take_value "$1" "${2:-}"; workload_api_url="$2"; shift 2 ;;
+    --workload-agent-digest)
+      take_value "$1" "${2:-}"; workload_agent_digest="$2"; shift 2 ;;
+    --action-enrollment-secret)
+      take_value "$1" "${2:-}"; action_enrollment_secret="$2"; shift 2 ;;
+    --sensor-enrollment-secret)
+      take_value "$1" "${2:-}"; sensor_enrollment_secret="$2"; shift 2 ;;
     --namespace)
       take_value "$1" "${2:-}"
       namespace="$2"
@@ -396,6 +419,31 @@ while [[ $# -gt 0 ]]; do
 done
 
 command -v openssl >/dev/null 2>&1 || die "openssl is required to generate credentials"
+command -v python3 >/dev/null 2>&1 || die "Python 3 is required to validate the workload CP origin"
+python3 - "$workload_api_url" <<'PYORIGIN' || die "--workload-api-url requires an HTTPS origin without credentials, path, query or fragment"
+import ipaddress, re, sys
+from urllib.parse import urlsplit
+try:
+    raw = sys.argv[1]
+    url = urlsplit(raw)
+    assert len(raw) <= 4096 and raw.isascii() and not any(c.isspace() for c in raw)
+    assert '?' not in raw and '#' not in raw
+    assert url.scheme == 'https' and url.netloc and url.hostname
+    assert url.username is None and url.password is None
+    assert url.path in ('', '/') and not url.query and not url.fragment
+    assert url.port is None or 1 <= url.port <= 65535
+    try:
+        ipaddress.ip_address(url.hostname)
+    except ValueError:
+        assert re.fullmatch(r'[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?', url.hostname)
+except (ValueError, AssertionError):
+    sys.exit(1)
+PYORIGIN
+[[ "$workload_agent_digest" =~ ^sha256:[0-9a-f]{64}$ ]] || die "--workload-agent-digest requires an actual sha256 image digest"
+[[ "$workload_agent_digest" != sha256:24346320bee236e86e256a34f666359bf8c6c2a2db1c8c63c89060788e98ed4f ]] || die "the published legacy agent cannot implement the execution-only contract"
+validate_dns_subdomain "action enrollment Secret" "$action_enrollment_secret"
+validate_dns_subdomain "sensor enrollment Secret" "$sensor_enrollment_secret"
+[[ "$action_enrollment_secret" != "$sensor_enrollment_secret" ]] || die "each host slot needs a different CP-issued enrollment Secret"
 validate_dns_label "namespace" "$namespace"
 validate_dns_label "release" "$release" 43
 validate_dns_label "cluster name" "$cluster_name" 47
@@ -739,6 +787,22 @@ fi
 cat > "$output_dir/values.yaml" <<EOF
 security:
   existingSecret: "${runtime_secret}"
+
+workloadLaunch:
+  apiUrl: "${workload_api_url}"
+  agentImage:
+    digest: "${workload_agent_digest}"
+
+actionWorkers:
+  - name: full
+    image: debian@sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587
+    enrollmentSecret:
+      name: "${action_enrollment_secret}"
+sensorWorkers:
+  - name: default
+    image: debian@sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587
+    enrollmentSecret:
+      name: "${sensor_enrollment_secret}"
 
 corePack:
   deploymentTokenSecret: "${deployment_secret}"

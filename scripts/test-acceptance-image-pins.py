@@ -61,7 +61,7 @@ class Pins(unittest.TestCase):
     def test_platform_override_does_not_retag_core_publication_or_wait(self):
         values = yaml.safe_load((ROOT / "charts/attune/values.yaml").read_text())
         rendered = subprocess.run(
-            ["helm", "template", "pins", str(ROOT / "charts/attune"),
+            ["helm", "template", "pins", str(ROOT / "charts/attune"), "--values", str(Path(__file__).resolve().parent.parent / "charts/attune/ci/workload-host-values.yaml"),
              "--set", "security.existingSecret=fixture-runtime",
              "--set-string", "global.imageTag=fixture-platform"],
             check=True, capture_output=True, text=True, timeout=30).stdout
@@ -84,13 +84,12 @@ class Pins(unittest.TestCase):
                           if values["images"]["api"]["digest"]
                           else ":fixture-platform"))
 
-    def test_published_agent_is_injected_in_both_storage_modes(self):
+    def test_separate_execution_host_pin_is_injected_in_both_storage_modes(self):
         values = yaml.safe_load((ROOT / "charts/attune/values.yaml").read_text())
-        agent = "ghcr.io/attune-system/attune/agent" + ("@" + values["images"]["agent"]["digest"]
-                 if values["images"]["agent"]["digest"] else ":" + values["global"]["imageTag"])
+        agent = "ghcr.io/attune-system/attune/agent@sha256:" + "a" * 64
         for mode in ("sharedVolume", "object"):
             rendered = subprocess.run(
-                ["helm", "template", "published", str(ROOT / "charts/attune"),
+                ["helm", "template", "published", str(ROOT / "charts/attune"), "--values", str(Path(__file__).resolve().parent.parent / "charts/attune/ci/workload-host-values.yaml"),
                  "--set", "security.existingSecret=fixture-runtime", "--set", "storage.mode=" + mode,
                  "--set", "storage.object.bucket=fixture", "--set", "storage.object.region=us-east-1",
                  "--set", "storage.object.endpoint=http://storage.invalid"],
@@ -140,13 +139,12 @@ class Pins(unittest.TestCase):
                             "security": {"existingSecret": "fixture-runtime"},
                             "storage": {"mode": mode, "object": {"bucket": "fixture-bucket",
                                         "region": "us-east-1", "endpoint": "https://storage.invalid"}},
-                            "images": {"agent": {"repository": "fixture-agent",
-                                                  "digest": agent_digest},
-                                       "initPacks": {"tag": "core-" + version, "digest": pack_image_digest}},
+                            "workloadLaunch": {"agentImage": {"repository": "fixture-agent", "digest": agent_digest}},
+                            "images": {"initPacks": {"tag": "core-" + version, "digest": pack_image_digest}},
                             "corePack": {"version": version, "digest": archive_digest,
                                          "requiredOnUpgrade": required},
                         }))
-                        command = ["helm", "template", "staged", str(ROOT / "charts/attune"),
+                        command = ["helm", "template", "staged", str(ROOT / "charts/attune"), "--values", str(Path(__file__).resolve().parent.parent / "charts/attune/ci/workload-host-values.yaml"),
                                    "--values", str(values_path)]
                         if upgrade:
                             command.append("--is-upgrade")

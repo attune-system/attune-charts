@@ -13,6 +13,8 @@ from unittest import mock
 import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
+# Public synthetic prerequisites; not installable image or enrollment evidence.
+WORKLOAD_SETUP_ARGS = ["--workload-api-url", "https://cp.example.invalid/", "--workload-agent-digest", "sha256:" + "a" * 64, "--action-enrollment-secret", "fixture-action-enrollment", "--sensor-enrollment-secret", "fixture-sensor-enrollment"]
 SPEC = importlib.util.spec_from_file_location("admission", ROOT / "charts/attune/files/bootstrap-admission.py")
 admission = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(admission)
@@ -122,7 +124,7 @@ class HelmTests(unittest.TestCase):
 
     def test_helm_wait_all_regular_workloads_can_start_before_publication_hook(self):
         for mode in ("sharedVolume", "object"):
-            command = ["helm", "template", "wait-dag", str(ROOT / "charts/attune"), "--set", "security.existingSecret=e-test", "--set", "mcp.enabled=true", "--set", f"storage.mode={mode}", "--set", "storage.object.bucket=e-test", "--set", "storage.object.region=us-east-1", "--set", "storage.object.endpoint=http://storage.invalid"]
+            command = ["helm", "template", "wait-dag", str(ROOT / "charts/attune"), "--values", str(ROOT / "charts/attune/ci/workload-host-values.yaml"), "--set", "security.existingSecret=e-test", "--set", "mcp.enabled=true", "--set", f"storage.mode={mode}", "--set", "storage.object.bucket=e-test", "--set", "storage.object.region=us-east-1", "--set", "storage.object.endpoint=http://storage.invalid"]
             docs = [doc for doc in yaml.safe_load_all(subprocess.run(command, check=True, capture_output=True, text=True, timeout=30).stdout) if doc]
             workloads = [doc for doc in docs if doc["kind"] in ("Deployment", "StatefulSet", "DaemonSet", "Job")]
             components = set()
@@ -160,7 +162,7 @@ class HelmTests(unittest.TestCase):
                     expression = 'lookup "v1" "PersistentVolumeClaim" .Release.Namespace (printf "%s-' + suffix + '" (include "attune.fullname" .))'
                     source = source.replace(expression, 'dict "metadata" (dict "name" "fixture-' + suffix + '")')
                 path.write_text(source)
-            command = ["helm", "template", "bootstrap-test", str(chart), "--is-upgrade", "--set", "security.existingSecret=e-test", "--set", "storage.mode=object", "--set", "storage.object.migrateFromSharedVolume=true", "--set", "storage.object.bucket=e-test", "--set", "storage.object.region=us-east-1", "--set", "storage.object.endpoint=http://storage.invalid"]
+            command = ["helm", "template", "bootstrap-test", str(chart), "--values", str(ROOT / "charts/attune/ci/workload-host-values.yaml"), "--is-upgrade", "--set", "security.existingSecret=e-test", "--set", "storage.mode=object", "--set", "storage.object.migrateFromSharedVolume=true", "--set", "storage.object.bucket=e-test", "--set", "storage.object.region=us-east-1", "--set", "storage.object.endpoint=http://storage.invalid"]
             result = subprocess.run(command, check=True, capture_output=True, text=True, timeout=30)
             docs = [doc for doc in yaml.safe_load_all(result.stdout) if doc]
             preflight = next(doc for doc in docs if doc["kind"] == "Job" and doc["metadata"]["labels"].get("app.kubernetes.io/component") == "upgrade-pack-releases")
@@ -193,7 +195,7 @@ class HelmTests(unittest.TestCase):
         for mode in ("sharedVolume", "object"):
             for upgrade, required in ((False, False), (True, False), (True, True)):
                 with self.subTest(mode=mode, upgrade=upgrade, required=required):
-                    command = ["helm", "template", "bootstrap-test", str(ROOT / "charts/attune"), "--set", "security.existingSecret=e-test", "--set", f"storage.mode={mode}", "--set", f"corePack.requiredOnUpgrade={str(required).lower()}", "--set", "corePack.digest=" + "a" * 64, "--set", "storage.object.bucket=e-test", "--set", "storage.object.region=us-east-1", "--set", "storage.object.endpoint=http://storage.invalid"]
+                    command = ["helm", "template", "bootstrap-test", str(ROOT / "charts/attune"), "--values", str(ROOT / "charts/attune/ci/workload-host-values.yaml"), "--set", "security.existingSecret=e-test", "--set", f"storage.mode={mode}", "--set", f"corePack.requiredOnUpgrade={str(required).lower()}", "--set", "corePack.digest=" + "a" * 64, "--set", "storage.object.bucket=e-test", "--set", "storage.object.region=us-east-1", "--set", "storage.object.endpoint=http://storage.invalid"]
                     if upgrade:
                         command.append("--is-upgrade")
                     rendered = subprocess.run(command, check=True, capture_output=True, text=True, timeout=30).stdout
@@ -241,7 +243,7 @@ class SetupTests(unittest.TestCase):
                 if token:
                     env["ATTUNE_SETUP_BOOTSTRAP_TOKEN"] = token
                 result = subprocess.run(
-                    [str(ROOT / "scripts/generate-attune-setup.sh"), "--database-mode", "bundled",
+                    [str(ROOT / "scripts/generate-attune-setup.sh"), *WORKLOAD_SETUP_ARGS, "--database-mode", "bundled",
                      "--output-dir", directory], env=env, check=True, capture_output=True, text=True, timeout=30)
                 output = Path(directory)
                 secrets = list(yaml.safe_load_all((output / "secrets.yaml").read_text()))
