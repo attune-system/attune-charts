@@ -16,8 +16,21 @@
 {{- if and .Values.security.activeDirectory.searchBindDn (empty .Values.security.identitySecret.existingSecret) }}
 {{- fail "security.identitySecret.existingSecret is required when Active Directory searchBindDn is set" }}
 {{- end }}
-{{- if and .Values.mcp.enabled (not .Values.mcp.auth.useBootstrapTestUser) (empty .Values.mcp.auth.existingSecret) }}
-{{- fail "mcp.auth.existingSecret is required when MCP does not use the bootstrap identity" }}
+{{- if hasKey .Values.mcp "auth" }}
+{{- fail "mcp.auth has been removed: HTTP MCP requires each caller's Bearer token; remove startup credential settings" }}
+{{- end }}
+{{- range $field, $entries := .Values.mcp.http }}
+{{- if not (kindIs "slice" $entries) }}
+{{- fail (printf "mcp.http.%s must be a list" $field) }}
+{{- end }}
+{{- range $entries }}
+{{- if not (kindIs "string" .) }}
+{{- fail (printf "mcp.http.%s entries must be strings" $field) }}
+{{- end }}
+{{- if or (empty .) (contains "*" .) (contains "," .) (regexMatch "[[:space:]]" .) }}
+{{- fail (printf "mcp.http.%s entries must be nonempty exact values without wildcards, commas, or whitespace" $field) }}
+{{- end }}
+{{- end }}
 {{- end }}
 {{- $postgresqlCutover := eq (include "attune.postgresqlMajorCutover" .) "true" }}
 {{- if and $postgresqlCutover (not .Release.IsUpgrade) }}

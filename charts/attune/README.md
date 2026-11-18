@@ -11,7 +11,7 @@ This chart installs the Attune platform, including these components:
 The chart defaults target a small single-node k3s cluster. All platform
 Deployments use one replica, and shared claims use `ReadWriteOnce`.
 
-Chart `0.11.2` targets Attune `0.11.1` and core pack `1.0.8`, using the
+Chart `0.11.3` targets Attune `0.11.1` and core pack `1.0.8`, using the
 independently versioned `core-1.0.8` init-packs image. Defaults pin the published
 AMD64/ARM64 image indexes from release commit
 `46a80c7edf458c2dfa15461826fa3df269ebc6b2`, including the compatible injected
@@ -647,9 +647,53 @@ Sensors emit events through the scoped HTTP API, without child broker credential
 Run `python3 scripts/test-worker-environments.py` to verify worker Secret selection
 and passthrough rendering. The script requires Helm and PyYAML.
 
-When MCP is enabled with `mcp.auth.useBootstrapTestUser: false`, set
-`mcp.auth.existingSecret` to a Secret containing the keys selected by
-`mcp.auth.loginKey` and `mcp.auth.passwordKey`.
+### HTTP MCP
+
+MCP remains disabled by default. With `mcp.enabled: true`, the pinned Attune
+0.11.1 image serves `/mcp` using **each request's** `Authorization: Bearer <token>`.
+Clients obtain their own Attune API token; MCP validates it through `/auth/me`
+and forwards the same caller token for API operations. No bootstrap identity,
+shared login, credential store, login fallback, or token refresh is configured.
+`/health` remains unauthenticated for Kubernetes probes.
+
+```yaml
+mcp:
+  enabled: true
+  http:
+    hosts: ["mcp.example.com"]
+    origins: ["https://console.example.com"]
+```
+
+`mcp.http.hosts` lists exact HTTP Host authorities, including the port if the
+client sends one. Empty defaults to `<MCP Service name>:<mcp.service.port>`.
+Explicit entries replace that default; include every intended authority when
+using an ingress or port forwarding (for example `localhost:8090`). Forwarded
+headers do not replace Host validation. `mcp.http.origins` lists exact browser
+Origins; empty denies any request carrying Origin. Requests without Origin still
+require an allowed Host and a caller token. Wildcards are unsupported. Terminate
+TLS at the ingress/proxy and preserve the Authorization header.
+
+Chart 0.11.3 removes `mcp.auth` and rejects supplied obsolete settings, including
+values retained with `helm upgrade --reuse-values`. Remove that subtree from
+your release values before upgrading. The old chart injected startup login
+credentials, which the pinned 0.11.1 HTTP binary rejects, and omitted its required
+Host configuration. This chart corrects both without changing image digests.
+The pinned agent image lacks CA roots. A non-root `prepare-ca-bundle` init
+container copies only the public `/etc/ssl/certs/ca-certificates.crt` bundle from
+the chart-selected `images.api` into a dedicated 2 MiB EmptyDir; MCP mounts it
+read-only. No host paths, credentials, or network download are used. Custom
+`images.api` overrides must provide `/bin/sh`, `cp`, `chmod`, and a nonempty public
+bundle at that path, readable by the configured Attune UID. Missing bundles stop
+Pod initialization. The copy also remains valid when a future MCP image includes
+its own roots; the chart-selected API bundle defines the MCP trust roots.
+Custom MCP images must support `ATTUNE_MCP_HTTP_HOSTS`,
+`ATTUNE_MCP_HTTP_ORIGINS`, and per-request HTTP Bearer authentication; older
+shared-login binaries are unsupported.
+
+Run `python3 scripts/test-mcp-http.py` for render contracts and
+`python3 scripts/test-mcp-http.py --integration` for controlled startup and HTTP
+checks against the exact chart-selected image. The integration uses synthetic
+caller tokens and a local API fixture, not a live platform or production data.
 
 `DB_USER` and `RABBITMQ_USER` must differ from their administrator usernames.
 The connection URLs must use the same service credentials. URL-encode passwords
@@ -900,10 +944,10 @@ consistent set.
 
 ### Native core 1.0.7 worker compatibility
 
-Chart `0.11.2` selects Attune `0.11.1` and its published core `1.0.8`.
+Chart `0.11.3` selects Attune `0.11.1` and its published core `1.0.8`.
 The rollout requirements below still apply; the measured `0.11.0` / core `1.0.7`
 acceptance results are historical and do not establish live `1.0.8` acceptance.
-Chart `0.11.1` retained core `1.0.7` in error; use `0.11.2` for the matching
+Chart `0.11.1` retained core `1.0.7` in error; use `0.11.3` for the matching
 application and core release.
 
 Attune `0.11.0` includes native directory selection and all coordinated security
