@@ -15,6 +15,13 @@ repository_url="packages"
 attune_version="$(awk -F '"' '/^appVersion:/ { print $2; exit }' "$root_dir/charts/attune/Chart.yaml")"
 trap 'rm -rf "$render_dir"' EXIT
 
+workload_setup_args=(
+  --workload-api-url https://cp.example.invalid/
+  --workload-agent-digest sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  --action-enrollment-secret fixture-action-enrollment
+  --sensor-enrollment-secret fixture-sensor-enrollment
+)
+
 setup_generator=(
   env
   ATTUNE_SETUP_DATABASE_PASSWORD=database-password-123456
@@ -24,6 +31,7 @@ setup_generator=(
   ATTUNE_SETUP_JWT_SECRET=jwt-secret-with-at-least-32-characters
   ATTUNE_SETUP_ENCRYPTION_KEY=encryption-key-with-at-least-32-characters
   "$root_dir/scripts/generate-attune-setup.sh"
+  "${workload_setup_args[@]}"
 )
 if [[ -n "${ATTUNE_HELM_316:-}" ]]; then
   helm_316=("$ATTUNE_HELM_316")
@@ -84,10 +92,10 @@ if [[ "$runtime_database_host" != "$values_database_host" ]]; then
   exit 1
 fi
 
-helm template verify "$root_dir/charts/attune" \
+helm template verify "$root_dir/charts/attune" --values "$root_dir/charts/attune/ci/workload-host-values.yaml" \
   --namespace verify \
   --values "$render_dir/setup/values.yaml" > "$render_dir/attune-cnpg.yaml"
-helm template verify "$root_dir/charts/attune" \
+helm template verify "$root_dir/charts/attune" --values "$root_dir/charts/attune/ci/workload-host-values.yaml" \
   --namespace verify \
   --is-upgrade \
   --values "$render_dir/setup/values.yaml" > "$render_dir/attune-cnpg-upgrade.yaml"
@@ -117,10 +125,10 @@ fi
 
 database_budget_count="$({
   docker run --rm -i mikefarah/yq:4.47.2 \
-    eval-all --no-doc '[select(.kind == "Deployment") as $deployment | $deployment.spec.template.spec.containers[] | .env[]? | select(.name == "ATTUNE__DATABASE__MAX_CONNECTIONS") | select((($deployment.spec.template.metadata.labels."app.kubernetes.io/component" | test("^(api|executor)$")) and .value == "10") or (($deployment.spec.template.metadata.labels."app.kubernetes.io/component" | test("^(supervisor|notifier|action-worker-|sensor-worker-)")) and .value == "5"))] | length' - \
+    eval-all --no-doc '[select(.kind == "Deployment") as $deployment | $deployment.spec.template.spec.containers[] | .env[]? | select(.name == "ATTUNE__DATABASE__MAX_CONNECTIONS") | select((($deployment.spec.template.metadata.labels."app.kubernetes.io/component" | test("^(api|executor)$")) and .value == "10") or (($deployment.spec.template.metadata.labels."app.kubernetes.io/component" | test("^(supervisor|notifier)$")) and .value == "5"))] | length' - \
     < "$render_dir/attune-cnpg.yaml"
 })"
-if [[ "$database_budget_count" -ne 6 ]]; then
+if [[ "$database_budget_count" -ne 4 ]]; then
   printf 'rendered workloads are missing explicit database connection budgets\n' >&2
   exit 1
 fi
@@ -135,7 +143,7 @@ if [[ "$api_stream_settings_count" -ne 5 ]]; then
   exit 1
 fi
 
-if helm template verify "$root_dir/charts/attune" \
+if helm template verify "$root_dir/charts/attune" --values "$root_dir/charts/attune/ci/workload-host-values.yaml" \
   --set security.existingSecret=attune-service-secrets \
   --set api.executionLogStreams.leaseSeconds=20 \
   --set api.executionLogStreams.heartbeatSeconds=10 \
@@ -144,15 +152,15 @@ if helm template verify "$root_dir/charts/attune" \
   exit 1
 fi
 
-helm template verify "$root_dir/charts/attune" \
+helm template verify "$root_dir/charts/attune" --values "$root_dir/charts/attune/ci/workload-host-values.yaml" \
   --set security.existingSecret=attune-service-secrets \
   --set api.executionLogStreams.leaseSeconds=21 \
   --set api.executionLogStreams.heartbeatSeconds=10 \
   > /dev/null
 
-if helm template verify "$root_dir/charts/attune" \
+if helm template verify "$root_dir/charts/attune" --values "$root_dir/charts/attune/ci/workload-host-values.yaml" \
   --set security.existingSecret=attune-service-secrets \
-  --set database.postgresql.maxConnections=99 \
+  --set database.postgresql.maxConnections=79 \
   > /dev/null 2>&1; then
   printf 'bundled PostgreSQL rendered below the rolling connection budget\n' >&2
   exit 1
@@ -214,7 +222,7 @@ fi
 
 shared_pvc_configuration="$({
   docker run --rm -i mikefarah/yq:4.47.2 \
-    eval-all --no-doc 'select(.kind == "PersistentVolumeClaim") | [.metadata.name, .spec.accessModes[0], .spec.storageClassName] | @tsv' - \
+    eval-all --no-doc 'select(.kind == "PersistentVolumeClaim" and (.metadata.name | test("-(packs|runtime-envs|artifacts)$"))) | [.metadata.name, .spec.accessModes[0], .spec.storageClassName] | @tsv' - \
     < "$render_dir/attune-cnpg.yaml"
 })"
 expected_shared_pvc_configuration=$'verify-attune-packs\tReadWriteMany\tverify-rwx-storage\tverify-attune-runtime-envs\tReadWriteMany\tverify-rwx-storage\tverify-attune-artifacts\tReadWriteMany\tverify-rwx-storage'
@@ -223,31 +231,31 @@ if [[ "$shared_pvc_configuration" != "$expected_shared_pvc_configuration" ]]; th
   exit 1
 fi
 
-helm lint --strict "$root_dir/charts/attune" \
+helm lint --strict "$root_dir/charts/attune" --values "$root_dir/charts/attune/ci/workload-host-values.yaml" \
   --values "$root_dir/charts/attune/ci/shared-volume-values.yaml"
-helm template verify "$root_dir/charts/attune" \
+helm template verify "$root_dir/charts/attune" --values "$root_dir/charts/attune/ci/workload-host-values.yaml" \
   --namespace verify \
   --values "$root_dir/charts/attune/ci/shared-volume-values.yaml" \
   > "$render_dir/attune-shared-volume.yaml"
 
-helm lint --strict "$root_dir/charts/attune" \
+helm lint --strict "$root_dir/charts/attune" --values "$root_dir/charts/attune/ci/workload-host-values.yaml" \
   --values "$root_dir/charts/attune/ci/object-values.yaml"
-helm template verify "$root_dir/charts/attune" \
+helm template verify "$root_dir/charts/attune" --values "$root_dir/charts/attune/ci/workload-host-values.yaml" \
   --namespace verify \
   --values "$root_dir/charts/attune/ci/object-values.yaml" \
   > "$render_dir/attune-object.yaml"
-helm template verify "$root_dir/charts/attune" \
+helm template verify "$root_dir/charts/attune" --values "$root_dir/charts/attune/ci/workload-host-values.yaml" \
   --namespace verify \
   --is-upgrade \
   --values "$root_dir/charts/attune/ci/object-values.yaml" \
   > "$render_dir/attune-object-upgrade.yaml"
-helm template verify "$root_dir/charts/attune" \
+helm template verify "$root_dir/charts/attune" --values "$root_dir/charts/attune/ci/workload-host-values.yaml" \
   --namespace verify \
   --is-upgrade \
   --values "$root_dir/charts/attune/ci/object-values.yaml" \
   --set corePack.requiredOnUpgrade=true \
   > "$render_dir/attune-object-required-core-upgrade.yaml"
-helm template verify "$root_dir/charts/attune" \
+helm template verify "$root_dir/charts/attune" --values "$root_dir/charts/attune/ci/workload-host-values.yaml" \
   --namespace verify \
   --is-upgrade \
   --values "$root_dir/charts/attune/ci/shared-volume-values.yaml" \
@@ -256,14 +264,14 @@ helm template verify "$root_dir/charts/attune" \
   --set rabbitmq.majorUpgradePolicy=startFresh \
   > "$render_dir/attune-postgresql-cutover.yaml"
 
-helm lint --strict "$root_dir/charts/attune" \
+helm lint --strict "$root_dir/charts/attune" --values "$root_dir/charts/attune/ci/workload-host-values.yaml" \
   --values "$root_dir/charts/attune/ci/object-ephemeral-values.yaml"
-helm template verify "$root_dir/charts/attune" \
+helm template verify "$root_dir/charts/attune" --values "$root_dir/charts/attune/ci/workload-host-values.yaml" \
   --namespace verify \
   --values "$root_dir/charts/attune/ci/object-ephemeral-values.yaml" \
   > "$render_dir/attune-object-ephemeral.yaml"
 
-helm template verify "$root_dir/charts/attune" \
+helm template verify "$root_dir/charts/attune" --values "$root_dir/charts/attune/ci/workload-host-values.yaml" \
   --namespace verify \
   --values "$root_dir/charts/attune/ci/object-values.yaml" \
   --set database.postgresql.admin.existingSecret=verify-postgresql-admin \
@@ -289,7 +297,7 @@ docker run --rm -i ghcr.io/yannh/kubeconform:v0.7.0 \
 docker run --rm -i ghcr.io/yannh/kubeconform:v0.7.0 \
   -strict -summary < "$render_dir/attune-restricted.yaml"
 
-if helm template verify "$root_dir/charts/attune" \
+if helm template verify "$root_dir/charts/attune" --values "$root_dir/charts/attune/ci/workload-host-values.yaml" \
   --namespace verify \
   --is-upgrade \
   --values "$root_dir/charts/attune/ci/shared-volume-values.yaml" \
@@ -298,7 +306,7 @@ if helm template verify "$root_dir/charts/attune" \
   printf 'schema accepted startFresh+complete PostgreSQL major-upgrade values\n' >&2
   exit 1
 fi
-if helm template verify "$root_dir/charts/attune" \
+if helm template verify "$root_dir/charts/attune" --values "$root_dir/charts/attune/ci/workload-host-values.yaml" \
   --namespace verify \
   --values "$root_dir/charts/attune/ci/shared-volume-values.yaml" \
   --set database.postgresql.majorUpgradePolicy=startFresh \
@@ -307,7 +315,7 @@ if helm template verify "$root_dir/charts/attune" \
   printf 'chart accepted PostgreSQL cutover during install\n' >&2
   exit 1
 fi
-if helm template verify "$root_dir/charts/attune" \
+if helm template verify "$root_dir/charts/attune" --values "$root_dir/charts/attune/ci/workload-host-values.yaml" \
   --namespace verify \
   --is-upgrade \
   --values "$root_dir/charts/attune/ci/shared-volume-values.yaml" \
@@ -319,7 +327,7 @@ if helm template verify "$root_dir/charts/attune" \
   printf 'chart accepted PostgreSQL cutover with an external database\n' >&2
   exit 1
 fi
-if helm template verify "$root_dir/charts/attune" \
+if helm template verify "$root_dir/charts/attune" --values "$root_dir/charts/attune/ci/workload-host-values.yaml" \
   --namespace verify \
   --is-upgrade \
   --values "$root_dir/charts/attune/ci/object-values.yaml" \
@@ -456,63 +464,38 @@ if [[ "$web_restricted_contract" != $'101\t101\tNET_BIND_SERVICE\t3' ]]; then
   exit 1
 fi
 
-worker_security_override="$({
-  helm template verify "$root_dir/charts/attune" \
-    --namespace verify \
-    --values "$root_dir/charts/attune/ci/object-values.yaml" \
-    --set-json 'actionWorkers=[{"name":"custom","image":"python:3.12","podSecurityContext":{"fsGroup":2000},"containerSecurityContext":{"runAsUser":2000,"runAsGroup":2000}}]' | \
-  docker run --rm -i mikefarah/yq:4.47.2 \
-    eval-all --no-doc '[select(.kind == "Deployment" and .spec.template.metadata.labels."app.kubernetes.io/component" == "action-worker-custom")] | .[0] | [.spec.template.spec.securityContext.fsGroup, (.spec.template.spec.containers[] | select(.name == "worker") | .securityContext.runAsUser), (.spec.template.spec.containers[] | select(.name == "worker") | .securityContext.runAsGroup)] | @tsv' -
-})"
-if [[ "$worker_security_override" != $'2000\t2000\t2000' ]]; then
-  printf 'worker security context override did not reach the rendered Pod: %s\n' \
-    "$worker_security_override" >&2
-  exit 1
-fi
+# Worker identity override refusal is covered with otherwise-valid prerequisites
+# by test-worker-environments.py; execution hosts have a fixed custody identity.
 
-worker_fs_group_policy_override="$({
-  helm template verify "$root_dir/charts/attune" \
-    --namespace verify \
-    --values "$root_dir/charts/attune/ci/shared-volume-values.yaml" \
-    --set-json 'actionWorkers=[{"name":"custom","image":"python:3.12","podSecurityContext":{"fsGroupChangePolicy":"Always"}}]' | \
-  docker run --rm -i mikefarah/yq:4.47.2 \
-    eval-all --no-doc '[select(.kind == "Deployment" and .spec.template.metadata.labels."app.kubernetes.io/component" == "action-worker-custom")] | .[0] | [.spec.template.spec.securityContext.fsGroup, .spec.template.spec.securityContext.fsGroupChangePolicy] | @tsv' -
-})"
-if [[ "$worker_fs_group_policy_override" != $'1000\tAlways' ]]; then
-  printf 'worker fsGroup fallback overwrote the explicit change policy: %s\n' \
-    "$worker_fs_group_policy_override" >&2
-  exit 1
-fi
-
-if helm template verify "$root_dir/charts/attune" \
+if helm template verify "$root_dir/charts/attune" --values "$root_dir/charts/attune/ci/workload-host-values.yaml" \
   --set security.existingSecret=verify-runtime \
   --set workloadSecurity.podSecurityContext.runAsNonRoot=false \
   > /dev/null 2>&1; then
   printf 'restricted workload security accepted runAsNonRoot=false\n' >&2
   exit 1
 fi
-if helm template verify "$root_dir/charts/attune" \
+if helm template verify "$root_dir/charts/attune" --values "$root_dir/charts/attune/ci/workload-host-values.yaml" \
   --set security.existingSecret=verify-runtime \
   --set workloadSecurity.containerSecurityContext.allowPrivilegeEscalation=true \
   > /dev/null 2>&1; then
   printf 'restricted workload security accepted privilege escalation\n' >&2
   exit 1
 fi
-if helm template verify "$root_dir/charts/attune" \
+if helm template verify "$root_dir/charts/attune" --values "$root_dir/charts/attune/ci/workload-host-values.yaml" \
   --set security.existingSecret=verify-runtime \
   --set-json 'actionWorkers=[{"name":"unsafe","image":"python:3.12","containerSecurityContext":{"runAsUser":0}}]' \
   > /dev/null 2>&1; then
   printf 'restricted worker override accepted root UID\n' >&2
   exit 1
 fi
-if helm template verify "$root_dir/charts/attune" \
+if helm template verify "$root_dir/charts/attune" --values "$root_dir/charts/attune/ci/workload-host-values.yaml" \
   --set security.existingSecret=verify-runtime \
   --set-json 'actionWorkers=[{"name":"unsafe","image":"python:3.12","containerSecurityContext":{"capabilities":{"add":["SYS_ADMIN"]}}}]' \
   > /dev/null 2>&1; then
   printf 'restricted worker override accepted SYS_ADMIN\n' >&2
   exit 1
 fi
-if helm template verify "$root_dir/charts/attune" \
+if helm template verify "$root_dir/charts/attune" --values "$root_dir/charts/attune/ci/workload-host-values.yaml" \
   --set security.existingSecret=verify-runtime \
   --set-json 'actionWorkers=[{"name":"unsafe","image":"python:3.12","podSecurityContext":{"seccompProfile":{"type":"Unconfined"}}}]' \
   > /dev/null 2>&1; then
@@ -525,8 +508,8 @@ default_worker_empty_dir_count="$({
     eval-all --no-doc '[select(.kind == "Deployment" and (.metadata.labels."app.kubernetes.io/component" | test("^(action|sensor)-worker-"))) | .spec.template.spec.volumes[] | select((.name == "packs" or .name == "runtime-envs") and has("emptyDir") and .emptyDir.sizeLimit != null)] | length' - \
     < "$render_dir/attune-object.yaml"
 })"
-if [[ "$default_worker_empty_dir_count" -ne 4 ]]; then
-  printf 'default object mode rendered %s bounded emptyDir worker caches, expected 4\n' "$default_worker_empty_dir_count" >&2
+if [[ "$default_worker_empty_dir_count" -ne 0 ]]; then
+  printf 'default object mode rendered %s pack/runtime worker caches, expected none\n' "$default_worker_empty_dir_count" >&2
   exit 1
 fi
 
@@ -545,8 +528,8 @@ ephemeral_claim_count="$({
     eval-all --no-doc '[select(.kind == "Deployment") | .spec.template.spec.volumes[]? | select(has("ephemeral"))] | length' - \
     < "$render_dir/attune-object-ephemeral.yaml"
 })"
-if [[ "$ephemeral_claim_count" -ne 4 ]]; then
-  printf 'object generic ephemeral mode rendered %s inline claims, expected 4\n' "$ephemeral_claim_count" >&2
+if [[ "$ephemeral_claim_count" -ne 0 ]]; then
+  printf 'object generic ephemeral mode rendered %s inline worker-cache claims, expected none\n' "$ephemeral_claim_count" >&2
   exit 1
 fi
 
@@ -555,7 +538,7 @@ ephemeral_cache_claims="$({
     eval-all --no-doc 'select(.kind == "Deployment" and (.metadata.labels."app.kubernetes.io/component" | test("^(action|sensor)-worker-"))) as $deployment | $deployment.spec.template.spec.volumes[] | select(.name == "packs" or .name == "runtime-envs") | [$deployment.metadata.labels."app.kubernetes.io/component", .name, (.ephemeral.volumeClaimTemplate.spec.accessModes | join(",")), .ephemeral.volumeClaimTemplate.spec.resources.requests.storage, .ephemeral.volumeClaimTemplate.spec.storageClassName] | @tsv' - \
     < "$render_dir/attune-object-ephemeral.yaml"
 })"
-expected_ephemeral_cache_claims=$'action-worker-full\tpacks\tReadWriteOnce\t2Gi\tverify-rwo-storage\naction-worker-full\truntime-envs\tReadWriteOnce\t10Gi\tverify-rwo-storage\nsensor-worker-default\tpacks\tReadWriteOnce\t2Gi\tverify-rwo-storage\nsensor-worker-default\truntime-envs\tReadWriteOnce\t10Gi\tverify-rwo-storage'
+expected_ephemeral_cache_claims=''
 if [[ "$ephemeral_cache_claims" != "$expected_ephemeral_cache_claims" ]]; then
   printf 'object generic ephemeral cache claims differ from the expected per-Pod RWO claims:\n%s\n' "$ephemeral_cache_claims" >&2
   exit 1
@@ -563,7 +546,7 @@ fi
 
 ephemeral_worker_kinds="$({
   docker run --rm -i mikefarah/yq:4.47.2 \
-    eval-all --no-doc 'select(.metadata.labels."app.kubernetes.io/component" | test("^(action|sensor)-worker-")) | [.metadata.name, .kind] | @tsv' - \
+    eval-all --no-doc 'select(.kind == "Deployment" and (.metadata.labels."app.kubernetes.io/component" | test("^(action|sensor)-worker-"))) | [.metadata.name, .kind] | @tsv' - \
     < "$render_dir/attune-object-ephemeral.yaml"
 })"
 expected_ephemeral_worker_kinds=$'verify-attune-action-worker-full\tDeployment\tverify-attune-sensor-worker-default\tDeployment'
@@ -597,7 +580,7 @@ if [[ "$ephemeral_standalone_cache_pvc_count" -ne 0 ]]; then
   exit 1
 fi
 
-if helm template verify "$root_dir/charts/attune" \
+if helm template verify "$root_dir/charts/attune" --values "$root_dir/charts/attune/ci/workload-host-values.yaml" \
   --set security.existingSecret=verify-runtime \
   --set storage.local.mode=sharedVolume \
   > /dev/null 2>&1; then
@@ -605,7 +588,7 @@ if helm template verify "$root_dir/charts/attune" \
   exit 1
 fi
 
-if helm template verify "$root_dir/charts/attune" \
+if helm template verify "$root_dir/charts/attune" --values "$root_dir/charts/attune/ci/workload-host-values.yaml" \
   --set security.existingSecret=verify-runtime \
   --set storage.local.mode=genericEphemeralVolume \
   > /dev/null 2>&1; then
@@ -660,15 +643,15 @@ if [[ "$shared_local_security_count" -ne 1 ]]; then
 fi
 
 custom_local_security_count="$({
-  helm template verify "$root_dir/charts/attune" \
+  helm template verify "$root_dir/charts/attune" --values "$root_dir/charts/attune/ci/workload-host-values.yaml" \
     --namespace verify \
     --values "$root_dir/charts/attune/ci/object-values.yaml" \
     --set storage.local.podSecurityContext.fsGroup=2000 | \
   docker run --rm -i mikefarah/yq:4.47.2 \
     eval-all --no-doc '[select((.kind == "Deployment" or .kind == "Job") and .spec.template.spec.securityContext.fsGroup == 2000)] | length' -
 })"
-if [[ "$custom_local_security_count" -ne 6 ]]; then
-  printf 'custom object-mode local-volume fsGroup did not reach every writable Pod\n' >&2
+if [[ "$custom_local_security_count" -ne 4 ]]; then
+  printf 'custom object-mode local-volume fsGroup did not reach the four CP storage Pods\n' >&2
   exit 1
 fi
 
@@ -687,8 +670,8 @@ object_bounded_local_count="$({
     eval-all --no-doc '[select(.kind == "Deployment" or .kind == "Job") | .spec.template.spec.volumes[]? | select(has("emptyDir") and (.name == "packs" or .name == "runtime-envs" or .name == "artifacts" or .name == "pack-staging"))] | length' - \
     < "$render_dir/attune-object.yaml"
 })"
-if [[ "$object_bounded_local_count" -ne 11 ]]; then
-  printf 'object mode rendered %s bounded storage volumes, expected 11\n' "$object_bounded_local_count" >&2
+if [[ "$object_bounded_local_count" -ne 5 ]]; then
+  printf 'object mode rendered %s bounded CP storage volumes, expected 5\n' "$object_bounded_local_count" >&2
   exit 1
 fi
 
@@ -709,7 +692,7 @@ if [[ "$rendered_log_limits" != $'65536\t500' ]]; then
 fi
 
 custom_log_limits="$({
-  helm template verify "$root_dir/charts/attune" \
+  helm template verify "$root_dir/charts/attune" --values "$root_dir/charts/attune/ci/workload-host-values.yaml" \
     --set security.existingSecret=verify-runtime \
     --set artifacts.logSegmentMaxBytes=12345 \
     --set artifacts.flushIntervalMs=678 | \
@@ -741,8 +724,8 @@ shared_platform_wait_count="$({
     eval-all --no-doc '[select(.kind == "Deployment") | .spec.template.spec.initContainers[] | select(.name == "wait-for-api-platform" and (.args[0] | contains("/health/ready")) and (.args[0] | contains("timed out after 300s")))] | length' - \
     < "$render_dir/attune-shared-volume.yaml"
 })"
-if [[ "$shared_platform_wait_count" -ne 3 ]]; then
-  printf 'executor and worker pools do not use the bounded platform-readiness wait\n' >&2
+if [[ "$shared_platform_wait_count" -ne 1 ]]; then
+  printf 'executor does not use the bounded platform-readiness wait\n' >&2
   exit 1
 fi
 
@@ -958,7 +941,7 @@ if [[ "$object_identity_consumers" != 'api,supervisor' ]]; then
   exit 1
 fi
 
-if helm template verify "$root_dir/charts/attune" \
+if helm template verify "$root_dir/charts/attune" --values "$root_dir/charts/attune/ci/workload-host-values.yaml" \
   --set security.existingSecret=verify-runtime \
   --set storage.mode=object \
   --set storage.object.bucket=verify-attune-objects \
@@ -969,7 +952,7 @@ if helm template verify "$root_dir/charts/attune" \
   exit 1
 fi
 
-"${helm_316[@]}" template verify charts/attune \
+"${helm_316[@]}" template verify charts/attune --values charts/attune/ci/workload-host-values.yaml \
   --namespace verify \
   --set-string security.existingSecret=verify-runtime \
   --set-json packRegistry.standardIndexRef=null > "$render_dir/attune-rancher-null.yaml"
@@ -978,7 +961,7 @@ if ! grep -q 'value: "b50e4e6d5003717505c7b894f14b8049de32c735"' "$render_dir/at
   exit 1
 fi
 
-"${helm_316[@]}" template verify charts/attune \
+"${helm_316[@]}" template verify charts/attune --values charts/attune/ci/workload-host-values.yaml \
   --namespace verify \
   --set-string security.existingSecret=verify-runtime \
   --set-json web.ingress.className=null \
@@ -994,14 +977,14 @@ fi
   --set-json sensorWorkers=null \
   > "$render_dir/attune-optional-values.yaml"
 
-"${helm_316[@]}" template verify charts/attune \
+"${helm_316[@]}" template verify charts/attune --values charts/attune/ci/workload-host-values.yaml \
   --namespace verify \
   --set-string security.existingSecret=verify-runtime \
-  --set-json 'actionWorkers=[{"name":"minimal-action","image":"python:3.12"}]' \
-  --set-json 'sensorWorkers=[{"name":"minimal-sensor","image":"python:3.12"}]' \
+  --set-json 'actionWorkers=[{"name":"minimal-action","image":"python:3.12","enrollmentSecret":{"name":"fixture-action"}}]' \
+  --set-json 'sensorWorkers=[{"name":"minimal-sensor","image":"python:3.12","enrollmentSecret":{"name":"fixture-sensor"}}]' \
   > "$render_dir/attune-minimal-workers.yaml"
 
-if "${helm_316[@]}" template verify charts/attune \
+if "${helm_316[@]}" template verify charts/attune --values charts/attune/ci/workload-host-values.yaml \
   --namespace verify \
   --set-string security.existingSecret=verify-runtime \
   --set-json 'actionWorkers=[{"name":"stopped","image":"python:3.12","replicas":0}]' \
@@ -1011,7 +994,7 @@ if "${helm_316[@]}" template verify charts/attune \
 fi
 
 if rancher_type_error="$({
-  "${helm_316[@]}" template verify charts/attune \
+  "${helm_316[@]}" template verify charts/attune --values charts/attune/ci/workload-host-values.yaml \
     --namespace verify \
     --set-string security.existingSecret=verify-runtime \
     --set-json 'packRegistry.standardIndexRef={}' 2>&1
@@ -1028,7 +1011,7 @@ if [[ "$rancher_type_error" != *standardIndexRef* ||
 fi
 
 if rancher_scalar_error="$({
-  "${helm_316[@]}" template verify charts/attune \
+  "${helm_316[@]}" template verify charts/attune --values charts/attune/ci/workload-host-values.yaml \
     --namespace verify \
     --set-string security.existingSecret=verify-runtime \
     --set-string 'api.service.type=foo: bar' 2>&1
@@ -1100,7 +1083,7 @@ if [[ "$cnpg_encryption_key" != "$bundled_encryption_key" ]]; then
   exit 1
 fi
 
-helm template verify "$root_dir/charts/attune" \
+helm template verify "$root_dir/charts/attune" --values "$root_dir/charts/attune/ci/workload-host-values.yaml" \
   --namespace verify \
   --values "$render_dir/setup-bundled/values.yaml" > "$render_dir/attune-bundled.yaml"
 
@@ -1137,7 +1120,7 @@ ATTUNE_SETUP_DATABASE_PASSWORD='external@database:password' \
 ATTUNE_SETUP_RABBITMQ_PASSWORD='external@rabbitmq:password' \
 ATTUNE_SETUP_JWT_SECRET=jwt-secret-with-at-least-32-characters \
 ATTUNE_SETUP_ENCRYPTION_KEY=encryption-key-with-at-least-32-characters \
-  "$root_dir/scripts/generate-attune-setup.sh" \
+  "$root_dir/scripts/generate-attune-setup.sh" "${workload_setup_args[@]}" \
     --database-mode external \
     --database-host db.example.com \
     --database-user 'attune@app' \
@@ -1152,9 +1135,9 @@ ATTUNE_SETUP_ENCRYPTION_KEY=encryption-key-with-at-least-32-characters \
     --release verify \
     --output-dir "$render_dir/setup-external" >/dev/null
 
-helm lint --strict "$root_dir/charts/attune" \
+helm lint --strict "$root_dir/charts/attune" --values "$root_dir/charts/attune/ci/workload-host-values.yaml" \
   --values "$render_dir/setup-external/values.yaml"
-helm template verify "$root_dir/charts/attune" \
+helm template verify "$root_dir/charts/attune" --values "$root_dir/charts/attune/ci/workload-host-values.yaml" \
   --namespace verify \
   --values "$render_dir/setup-external/values.yaml" > "$render_dir/attune-external.yaml"
 
@@ -1216,7 +1199,7 @@ fi
 
 ATTUNE_SETUP_DATABASE_PASSWORD='  short' \
 ATTUNE_SETUP_RABBITMQ_PASSWORD=short \
-  "$root_dir/scripts/generate-attune-setup.sh" \
+  "$root_dir/scripts/generate-attune-setup.sh" "${workload_setup_args[@]}" \
     --database-mode external \
     --database-host db.example.com \
     --rabbitmq-mode external \
@@ -1233,7 +1216,7 @@ if [[ "$round_trip_password" != '  short' ]]; then
   exit 1
 fi
 
-"$root_dir/scripts/generate-attune-setup.sh" \
+"$root_dir/scripts/generate-attune-setup.sh" "${workload_setup_args[@]}" \
   --database-mode external \
   --database-host db.example.com \
   --rabbitmq-mode external \
@@ -1285,7 +1268,7 @@ for corrupt_state in empty truncated empty-value malformed duplicate; do
       ;;
   esac
   corrupt_checksum="$(sha256sum "$corrupt_dir/credentials.state")"
-  if "$root_dir/scripts/generate-attune-setup.sh" \
+  if "$root_dir/scripts/generate-attune-setup.sh" "${workload_setup_args[@]}" \
     --database-mode external \
     --database-host db.example.com \
     --rabbitmq-mode external \
@@ -1307,7 +1290,7 @@ old_encryption_key="$({
     eval-all --no-doc 'select(.metadata.name == "verify-runtime") | .data."ATTUNE__SECURITY__ENCRYPTION_KEY"' - \
     < "$render_dir/setup-rotate/secrets.yaml"
 })"
-"$root_dir/scripts/generate-attune-setup.sh" \
+"$root_dir/scripts/generate-attune-setup.sh" "${workload_setup_args[@]}" \
   --output-dir "$render_dir/setup-rotate" \
   --rotate-secrets >/dev/null
 new_encryption_key="$({
@@ -1346,7 +1329,7 @@ for mode_pair in \
 
   "${setup_generator[@]}" "${mode_args[@]}" >/dev/null
 
-  helm template verify "$root_dir/charts/attune" \
+  helm template verify "$root_dir/charts/attune" --values "$root_dir/charts/attune/ci/workload-host-values.yaml" \
     --namespace verify \
     --values "$render_dir/setup-$mode_name/values.yaml" > "$render_dir/attune-$mode_name.yaml"
   printf '%s\n' '---' >> "$render_dir/attune-mode-matrix.yaml"
@@ -1389,7 +1372,7 @@ fi
 docker run --rm -i ghcr.io/yannh/kubeconform:v0.7.0 \
   -strict -summary < "$render_dir/attune-mode-matrix.yaml"
 
-if "$root_dir/scripts/generate-attune-setup.sh" \
+if "$root_dir/scripts/generate-attune-setup.sh" "${workload_setup_args[@]}" \
   --ingress-host exposed.example.com \
   --ingress-tls-secret exposed-example-com-tls \
   --output-dir "$render_dir/setup-known-password" >/dev/null 2>&1; then
@@ -1398,7 +1381,7 @@ if "$root_dir/scripts/generate-attune-setup.sh" \
 fi
 
 if ATTUNE_SETUP_DATABASE_PASSWORD=external-password \
-  "$root_dir/scripts/generate-attune-setup.sh" \
+  "$root_dir/scripts/generate-attune-setup.sh" "${workload_setup_args[@]}" \
     --database-mode external \
     --database-host 'db..example.com' \
     --output-dir "$render_dir/setup-invalid-external-host" >/dev/null 2>&1; then
@@ -1407,7 +1390,7 @@ if ATTUNE_SETUP_DATABASE_PASSWORD=external-password \
 fi
 
 if ATTUNE_SETUP_DATABASE_PASSWORD=external-password \
-  "$root_dir/scripts/generate-attune-setup.sh" \
+  "$root_dir/scripts/generate-attune-setup.sh" "${workload_setup_args[@]}" \
     --database-mode external \
     --database-host db.example.com \
     --database-sslmode verify-full \
@@ -1426,7 +1409,7 @@ if [[ "$quoted_output" != *"--values $expected_quoted_values_path"* ]]; then
   exit 1
 fi
 
-if "$root_dir/scripts/generate-attune-setup.sh" \
+if "$root_dir/scripts/generate-attune-setup.sh" "${workload_setup_args[@]}" \
   --ingress-host 'Invalid..example.com' \
   --ingress-tls-secret invalid-host-tls \
   --confirm-bootstrap-password-changed \
@@ -1435,14 +1418,14 @@ if "$root_dir/scripts/generate-attune-setup.sh" \
   exit 1
 fi
 
-if "$root_dir/scripts/generate-attune-setup.sh" \
+if "$root_dir/scripts/generate-attune-setup.sh" "${workload_setup_args[@]}" \
   --database-user postgres \
   --output-dir "$render_dir/setup-cnpg-postgres" >/dev/null 2>&1; then
   printf 'setup generator accepted the CNPG postgres administrator as its application user\n' >&2
   exit 1
 fi
 
-if "$root_dir/scripts/generate-attune-setup.sh" \
+if "$root_dir/scripts/generate-attune-setup.sh" "${workload_setup_args[@]}" \
   --release aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
   --output-dir "$render_dir/setup-long-release" >/dev/null 2>&1; then
   printf 'setup generator accepted a release name that produces oversized resources\n' >&2
@@ -1518,7 +1501,7 @@ for expected_name in \
   fi
 done
 
-helm template verify "$root_dir/charts/attune" \
+helm template verify "$root_dir/charts/attune" --values "$root_dir/charts/attune/ci/workload-host-values.yaml" \
   --namespace verify \
   --is-upgrade \
   --set global.imageTag="$attune_version" \
@@ -1533,7 +1516,7 @@ helm template verify "$root_dir/charts/attune" \
   --set rabbitmq.provisioning.enabled=true \
   > "$render_dir/attune-upgrade.yaml"
 
-helm template verify "$root_dir/charts/attune" \
+helm template verify "$root_dir/charts/attune" --values "$root_dir/charts/attune/ci/workload-host-values.yaml" \
   --namespace verify \
   --set security.existingSecret=attune-service-secrets \
   --set database.postgresql.admin.existingSecret=attune-postgresql-admin \
@@ -1546,7 +1529,7 @@ helm template verify "$root_dir/charts/attune" \
   --set rabbitmq.provisioning.enabled=true \
   > "$render_dir/attune-existing-secrets.yaml"
 
-helm template verify "$root_dir/charts/attune" \
+helm template verify "$root_dir/charts/attune" --values "$root_dir/charts/attune/ci/workload-host-values.yaml" \
   --namespace verify \
   --set security.existingSecret=attune-service-secrets \
   --set security.identitySecret.existingSecret=attune-identity \
@@ -1594,7 +1577,7 @@ if [[ "$identity_secret_consumers" -ne 1 ]]; then
   exit 1
 fi
 
-if helm template verify "$root_dir/charts/attune" \
+if helm template verify "$root_dir/charts/attune" --values "$root_dir/charts/attune/ci/workload-host-values.yaml" \
   --set security.existingSecret=attune-service-secrets \
   --set security.oidc.enabled=true \
   > /dev/null 2>&1; then
@@ -1602,7 +1585,7 @@ if helm template verify "$root_dir/charts/attune" \
   exit 1
 fi
 
-if helm template verify "$root_dir/charts/attune" \
+if helm template verify "$root_dir/charts/attune" --values "$root_dir/charts/attune/ci/workload-host-values.yaml" \
   --set security.existingSecret=attune-service-secrets \
   --set security.activeDirectory.enabled=true \
   --set-string security.activeDirectory.url=ldaps://ad.example.com:636 \
@@ -1611,7 +1594,7 @@ if helm template verify "$root_dir/charts/attune" \
   exit 1
 fi
 
-if helm template verify "$root_dir/charts/attune" \
+if helm template verify "$root_dir/charts/attune" --values "$root_dir/charts/attune/ci/workload-host-values.yaml" \
   --set security.existingSecret=attune-service-secrets \
   --set-string security.activeDirectory.searchBindDn=cn=attune \
   > /dev/null 2>&1; then
@@ -1630,7 +1613,7 @@ if [[ "$external_secret_count" -ne 0 ]]; then
   exit 1
 fi
 
-if helm template verify "$root_dir/charts/attune" \
+if helm template verify "$root_dir/charts/attune" --values "$root_dir/charts/attune/ci/workload-host-values.yaml" \
   --namespace verify \
   --set security.existingSecret=attune-service-secrets \
   --set database.postgresql.provisioning.enabled=true \
@@ -1639,7 +1622,7 @@ if helm template verify "$root_dir/charts/attune" \
   exit 1
 fi
 
-if helm template verify "$root_dir/charts/attune" \
+if helm template verify "$root_dir/charts/attune" --values "$root_dir/charts/attune/ci/workload-host-values.yaml" \
   --namespace verify \
   --set security.existingSecret=attune-service-secrets \
   --set rabbitmq.provisioning.enabled=true \
@@ -1648,7 +1631,7 @@ if helm template verify "$root_dir/charts/attune" \
   exit 1
 fi
 
-if helm template verify "$root_dir/charts/attune" > /dev/null 2>&1; then
+if helm template verify "$root_dir/charts/attune" --values "$root_dir/charts/attune/ci/workload-host-values.yaml" --set security.existingSecret= > /dev/null 2>&1; then
   printf 'Attune rendered without a runtime Kubernetes Secret\n' >&2
   exit 1
 fi

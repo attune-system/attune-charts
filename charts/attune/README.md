@@ -11,11 +11,14 @@ This chart installs the Attune platform, including these components:
 The chart defaults target a small single-node k3s cluster. All platform
 Deployments use one replica, and shared claims use `ReadWriteOnce`.
 
-Chart `0.11.3` targets Attune `0.11.1` and core pack `1.0.8`, using the
+Chart `0.11.4` targets Attune `0.11.1` metadata only. It extends chart `0.11.3`
+for core pack `1.0.8`, using the
 independently versioned `core-1.0.8` init-packs image. Defaults pin the published
 AMD64/ARM64 image indexes from release commit
-`46a80c7edf458c2dfa15461826fa3df269ebc6b2`, including the compatible injected
-agent and init-user helper. [Published provenance](../../docs/published-images-0.11.1.json)
+`46a80c7edf458c2dfa15461826fa3df269ebc6b2`. Those historical service pins and
+`appVersion: 0.11.1` remain provenance, not a claim of compatibility with the
+new execution-host contract. The independent MCP configuration and pins from
+[PR12](https://github.com/attune-system/attune-charts/pull/12) are preserved. [Published provenance](../../docs/published-images-0.11.1.json)
 records index/child/config digests, source labels and the canonical core archive
 digest for this release.
 Digests override tags;
@@ -35,7 +38,37 @@ The bundled services use digest-pinned PostgreSQL `18.6-alpine` and RabbitMQ
 PostgreSQL 16 data requires a logical backup and restore into PostgreSQL 18.
 The chart does not run `pg_upgrade` or copy database files.
 
-### Upgrading encrypted data to Attune 0.10.1
+### Draft execution isolation prerequisite
+
+This companion is stacked on PR12 head
+`377d6613df4c0eda51428116c9e575688ad97125`. While PR12 is unmerged, its PR base
+is `security/mcp-request-auth-chart`; PR12 must merge before this companion.
+PR12 approval does not cover the worker changes or this regenerated package.
+
+This draft requires the canonical v1 remote CP launch/host APIs and an external
+colocated Docker Engine/controller pair. The CP and secret-bearing managers must
+remain outside the workload host. Kubernetes host Pods hold only per-slot scoped
+enrollment/custody; the external Engine supplies private procfs, immutable RO inputs
+and private writable stage/scratch. This chart does not implement Kubernetes Jobs,
+privileged DinD, Docker-socket Pods, network isolation or live stage disk quotas.
+
+Current published application/agent pins do not implement this contract. No new
+published pin is invented here. Set `workloadLaunch.apiUrl` to the real HTTPS CP
+origin, provision each enrollment through that CP, and supply an actual compatible
+`workloadLaunch.agentImage.digest` after validating the matching API/controller
+images. The old published agent digest is rejected. Init runs both actual binaries
+with `env -i` and checks exact offline `--workload-host-contract` output before
+copying them and their public CA roots. A claimed image tag or operator checkbox
+cannot substitute for that probe or the full integration evidence.
+
+Default rendering with only the older runtime Secret intentionally fails these
+new prerequisites; workers are not silently disabled or run via a legacy fallback.
+The companion PR remains draft/dependency-blocked until the supported installation,
+packaged source images, API authority, runtime stages and image selection are
+validated together. Synthetic image digests in render tests are fixtures, not
+installable or released image claims.
+
+## Upgrading encrypted data to Attune 0.10.1
 
 Existing installations with encrypted data from before `0.10.1` require the
 [offline encryption conversion procedure](https://github.com/attune-system/attune/blob/v0.10.1/docs/deployment/encryption-fingerprint-remediation.md#offline-upgrade-procedure).
@@ -160,6 +193,14 @@ generate a RabbitMQ operator.
 Create the runtime Secret before installing the chart. Keep this Secret out of
 the Helm values stored by Rancher. The required keys are listed under
 [Use pre-created Kubernetes Secrets](#use-pre-created-kubernetes-secrets).
+
+The runtime Secret alone is insufficient for execution hosts. Supply the real
+HTTPS CP origin, actual validated agent digest and distinct pre-provisioned
+enrollment Secret names described in the draft prerequisite. The setup generator
+requires `--workload-api-url`, `--workload-agent-digest`,
+`--action-enrollment-secret` and `--sensor-enrollment-secret`; it never generates
+or stores scoped enrollment tokens. Keep the custody PVC mounted at its parent
+and let the UID1000 host create its exclusive private `host` subdirectory.
 
 Set only Secret names and non-secret settings in your values file:
 
@@ -324,26 +365,11 @@ workloadSecurity:
   enabled: true
 ```
 
-Custom worker runtime images may use another non-root UID/GID. Override only
-that pool while retaining the shared restricted fields:
-
-```yaml
-actionWorkers:
-  - name: custom
-    image: company/custom-runtime:1.0.0
-    runtimes: [python, shell]
-    podSecurityContext:
-      fsGroup: 2000
-    containerSecurityContext:
-      runAsUser: 2000
-      runAsGroup: 2000
-```
-
-The configured user must exist in, or be supported numerically by, the runtime
-image, and must be able to write its local pack, runtime-environment, and
-artifact staging volumes. Disable `workloadSecurity.enabled` only when the
-cluster cannot accept these contexts and another admission/security mechanism
-provides equivalent controls.
+Execution-only hosts use UID/GID 1000 and a dedicated persistent custody
+claim. They reject custom runtime/security overrides, local runtime discovery,
+service passthrough, and DB pool settings. Runtime/image/placement selection
+belongs to the persisted CP profile, not the Pod's host image. Keep
+`workloadSecurity.enabled` enabled; no pack-controlled process runs in these Pods.
 
 ## Configure OIDC and Active Directory
 
@@ -431,22 +457,22 @@ these tables.
 
 Every long-running database client has an explicit pool budget under its
 service values. The API and executor default to 10 connections per Pod. The
-supervisor, notifier, action-worker Pods, sensor-worker Pods, and storage
-migration Jobs default to 5.
+supervisor, notifier, and storage migration Jobs default to 5. Execution-only
+action/sensor hosts have no database client or connection budget.
 
 Calculate the steady-state ceiling as
-`api replicas * api budget + executor replicas * executor budget + supervisor replicas * supervisor budget + notifier replicas * notifier budget + sum(action worker replicas * pool budget) + sum(sensor worker replicas * pool budget)`.
-The default deployment is therefore `10 + 10 + 5 + 5 + 5 + 5 = 40` pooled
+`api replicas * api budget + executor replicas * executor budget + supervisor replicas * supervisor budget + notifier replicas * notifier budget`.
+The default deployment is therefore `10 + 10 + 5 + 5 = 30` pooled
 connections. Kubernetes' default 25% rolling surge rounds each one-replica
 Deployment up by one Pod, so simultaneous rollouts can temporarily double that
-ceiling to 80. `database.connectionReserve` keeps another 20 connections for
+ceiling to 60. `database.connectionReserve` keeps another 20 connections for
 migration hooks, provisioning, monitoring, and operator access. The bundled
 PostgreSQL instance sets `max_connections` from
 `database.postgresql.maxConnections`, which defaults to 100. The chart rejects
 a bundled database capacity below its calculated rolling ceiling plus reserve.
 It cannot validate an external database's actual `max_connections`; provision
 at least 100 connections for the unmodified defaults and recalculate after
-changing replicas, worker pools, rollout strategy, or pool budgets.
+changing CP replicas, rollout strategy, or pool budgets.
 
 | RabbitMQ mode | Chart settings | Prerequisite |
 | --- | --- | --- |
@@ -616,36 +642,40 @@ these values into the Helm release. When the bundled PostgreSQL or RabbitMQ
 instance uses a different administrator account, set its `admin.existingSecret`
 and key names separately.
 
-Worker pools use individual Secret references. Action workers receive the
-database URL, broker URL, JWT signing secret, and encryption key. Sensor workers
-receive the first three. Their schema and broker readiness containers select
-only the keys those checks require.
+Each action/sensor item is one logical host slot with a unique
+`enrollmentSecret.name` and private custody PVC. It receives only the HTTPS API
+origin, scoped enrollment credential and custody directory, plus public CA and
+observability settings. It receives no general Config, database/broker credential,
+JWT/master key, cloud identity, shared pack/runtime/artifact volume, or Kubernetes
+service-account token. The external controller/Engine credentials stay outside it.
 
-Pack-controlled child processes start with a cleared environment and a minimal
-base selection. Each action or sensor pool can opt in to additional service
-environment names through `passthroughEnv`, which defaults to an empty list:
+`replicas` must be one. Add separate slots with independently provisioned
+enrollment Secrets and PVCs for capacity. Deployment strategy is `Recreate`, so a
+normal revision upgrade does not surge against the old slot. The host must acquire
+exclusive custody ownership before registration. On shutdown it closes admission,
+requests CP withdrawal preserving bounded capture/prepared-log delivery, drains
+for at most 90 seconds, then aborts-and-joins remaining local transport tasks within
+15 seconds. The chart requires at least 120 seconds termination grace and bounds
+rollout progress at 600 seconds. No timeout proves provider absence or stop.
+Unexpected replacement/force deletion must still fail closed on custody ownership
+and registration-incarnation fences; these render assertions are not a live
+rollout/custody test.
 
-```yaml
-actionWorkers:
-  - name: python
-    image: python:3.12-slim
-    runtimes: [python, shell]
-    passthroughEnv: [HTTPS_PROXY, SSL_CERT_FILE]
-    env:
-      - name: HTTPS_PROXY
-        value: http://proxy.example.internal:3128
-      - name: SSL_CERT_FILE
-        value: /etc/ssl/certs/ca-certificates.crt
-```
+Chart-created custody PVCs use `helm.sh/resource-policy: keep`, independent of
+Pod or release removal. Do not delete/reset keys or volumes to repair readiness.
+Retire them manually only after the host has withdrawn and delivery has completed
+or expired. PVC/node loss produces incomplete logs, never manufactured EOF.
 
-`env` supplies values to the service. `passthroughEnv` selects values exposed to
-actions, sensors, and dependency installers. Names must be exact, unique variable
-names. The reserved `ATTUNE_` namespace cannot pass through. Runtime context and
-scoped API tokens come from the service's execution or sensor context instead.
-Sensors emit events through the scoped HTTP API, without child broker credentials.
+`runtimes`, `passthroughEnv`, local cache/storage settings, general security
+context overrides and database budgets are removed from worker items. `env`
+accepts only literal public certificate/observability settings. CP-frozen selected
+input and finite channel grants reach the execution-only consumer; stdin is sent
+once after authenticated Running status and fresh input/grant checks.
 
-Run `python3 scripts/test-worker-environments.py` to verify worker Secret selection
-and passthrough rendering. The script requires Helm and PyYAML.
+Run `python3 scripts/test-worker-environments.py` for positive/negative Helm
+fixtures covering scope, rollout strategy, replica/Secret/PVC uniqueness, old-image
+rejection and prerequisites. Actual image/offline probe, API, withdrawal/custody and
+Engine/runtime tests are separate required evidence, currently incomplete.
 
 ### HTTP MCP
 
@@ -738,7 +768,7 @@ For a multi-node cluster, use a storage class that supports your chosen access
 mode and pod placement. `ReadWriteOnce` volumes can be mounted by several pods
 only when those pods run on the same node.
 
-The API, executor, supervisor, workers, and initialization Jobs share the three
+The CP API, executor, supervisor and initialization Jobs share the three
 `sharedStorage` claims. Configure all three as RWX when those workloads can run
 on different nodes. Bundled PostgreSQL and RabbitMQ remain RWO:
 
@@ -798,11 +828,10 @@ serviceAccounts:
 ```
 
 GCS does not use `region` or `kmsKey`. Put its Workload Identity annotation on
-the same two service accounts. Workers authenticate to the Attune API and do
-not receive bucket identity. Object mode creates no shared pack, runtime, or
-artifact claims. It uses size-limited `emptyDir` volumes for local pack and
-runtime caches and artifact staging. Runtime log buffering is in memory, not in
-an `emptyDir`.
+the same two CP service accounts. Execution-only hosts authenticate to the CP
+and receive no bucket identity or shared data claims in either storage mode.
+Their encrypted custody is persistent. Immutable runtime/pack cache and writable
+setup staging belong to the external controller/Engine pair, not these Pods.
 
 When `kmsKey` selects an AWS customer-managed KMS key, grant each service
 account that accesses encrypted objects, including the API and supervisor,
@@ -810,36 +839,12 @@ account that accesses encrypted objects, including the API and supervisor,
 that key. The IAM policy and the KMS key policy must both allow the roles, and
 the key must be in the S3 bucket's region.
 
-Object-mode Pods set only `fsGroup: 1000` and `fsGroupChangePolicy:
-OnRootMismatch` by default. Kubernetes gives that group write access to local
-volumes and adds it as a supplementary group without changing the UID supplied
-by an action-worker or sensor-worker image. Override these fields under
-`storage.local.podSecurityContext` if UID 1000 is not the installation's shared
-write group.
-
-For caches that should survive container restarts within the same Pod, opt into
-Kubernetes generic ephemeral volumes:
-
-```yaml
-storage:
-  mode: object
-  local:
-    mode: genericEphemeralVolume
-    packs:
-      sizeLimit: 2Gi
-      storageClassName: fast-rwo
-    runtimeEnvs:
-      sizeLimit: 10Gi
-      storageClassName: fast-rwo
-```
-
-The chart puts an inline `volumeClaimTemplate` on each action-worker and
-sensor-worker Pod for both caches. Kubernetes dynamically provisions each claim
-as `ReadWriteOnce`, schedules the Pod with its claims, and deletes them with the
-Pod. Claims are never shared between Pods. A replacement Pod gets empty caches
-and rebuilds them from object storage. The API and artifact staging continue to
-use bounded `emptyDir` volumes. This mode requires a storage class that supports
-dynamic provisioning and Kubernetes 1.23 or newer.
+CP local caches and object staging follow `storage.local`; those settings do
+not grant execution hosts filesystem access. Per-host encrypted custody always
+uses a dedicated retained PVC. It must not use a Pod-owned ephemeral claim or
+be shared with another enrollment. The external Engine's named-volume stage has
+separate archive/output bounds and cleanup; these are not hard live byte/inode
+quotas and can leave residual disk-exhaustion availability risk.
 
 Set the per-stream loss window under `artifacts`:
 
@@ -944,7 +949,10 @@ consistent set.
 
 ### Native core 1.0.7 worker compatibility
 
-Chart `0.11.3` selects Attune `0.11.1` and its published core `1.0.8`.
+Chart `0.11.4` retains historical Attune `0.11.1` service provenance and core
+`1.0.8` pins, while requiring the new matching launch/host API image contract.
+Published `0.11.1` agents cannot implement that contract; follow the draft
+prerequisite above before claiming any supported worker installation.
 The rollout requirements below still apply; the measured `0.11.0` / core `1.0.7`
 acceptance results are historical and do not establish live `1.0.8` acceptance.
 Chart `0.11.1` retained core `1.0.7` in error; use `0.11.3` for the matching
@@ -957,10 +965,12 @@ Stock `0.10.4` advertises `native` but cannot execute directory entrypoints;
 runtime advertisement is not evidence of directory support. Image metadata and
 static payload checks do not replace live acceptance for the selected bytes.
 
-In this chart, `images.agent` selects the `init-agent` image that copies the worker
-executable into every action/sensor pool. Set its repository and actual measured
-OCI `digest` to compatible code. Changing only `actionWorkers[].image` changes the
-runtime container, not the injected worker executable. Verify all eligible pools
+In historical charts, `images.agent` selected the injected worker. Execution-only
+slots now select their independently validated `workloadLaunch.agentImage`;
+`images.agent` remains unchanged for other consumers, including MCP. A worker
+item's `image` contains the trusted host consumer, not the pack runtime. The CP
+profile selects the external Engine runtime image. The historical `0.11.1` agent
+is not compatible with this new contract. Verify all eligible pools
 and any external workers use compatible code, with compatible API contracts and
 retained old-core execution behavior. A successful render or health check does not
 establish binary compatibility. Fresh installs also require this real image
@@ -971,7 +981,9 @@ runtime, sensor or IAM settings:
 
 1. Keep the currently admitted OLD core release: preserve its `corePack.version`,
    `corePack.digest`, `images.initPacks.tag` and `images.initPacks.digest`. Roll out
-   the pinned `0.11.1` injected agent and coordinated service images. Wait for all worker rollouts to complete, old Pods
+   the actual validated execution-only agent and matching CP/controller service images
+   described in the draft prerequisite above. Published `0.11.1` pins cannot
+   satisfy this step for chart `0.11.4`. Wait for all worker rollouts to complete, old Pods
    to terminate, and old/external workers to drain or be removed from dispatch.
    Verify old-core execution on the new code before proceeding.
 2. Retain those compatible worker pins, then select core `1.0.8` and its actual

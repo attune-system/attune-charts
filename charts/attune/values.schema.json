@@ -564,6 +564,44 @@
         }
       }
     },
+    "workloadLaunch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "apiUrl",
+        "agentImage"
+      ],
+      "properties": {
+        "apiUrl": {
+          "type": "string"
+        },
+        "agentImage": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "repository",
+            "digest",
+            "tag",
+            "pullPolicy"
+          ],
+          "properties": {
+            "repository": {
+              "type": "string",
+              "minLength": 1
+            },
+            "digest": {
+              "type": "string"
+            },
+            "tag": {
+              "type": "string"
+            },
+            "pullPolicy": {
+              "$ref": "#/definitions/pullPolicy"
+            }
+          }
+        }
+      }
+    },
     "actionWorkers": {
       "type": "array",
       "items": { "$ref": "#/definitions/actionWorker" }
@@ -979,64 +1017,113 @@
     },
     "workerBaseProperties": {
       "type": "object",
-      "additionalProperties": true,
-      "not": { "anyOf": [{ "required": ["storage"] }, { "required": ["storageMode"] }] },
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "image",
+        "enrollmentSecret"
+      ],
       "properties": {
-        "name": { "$ref": "#/definitions/workerName" },
-        "image": { "type": "string", "minLength": 1 },
-        "replicas": { "type": "integer", "minimum": 1 },
-        "runtimes": { "$ref": "#/definitions/runtimeList" },
-        "resources": { "$ref": "#/definitions/resources" },
-        "podSecurityContext": { "$ref": "#/definitions/podSecurityContext" },
-        "containerSecurityContext": { "$ref": "#/definitions/containerSecurityContextOverride" },
-        "env": {
-          "type": "array",
-          "items": { "$ref": "#/definitions/envVar" }
+        "name": {
+          "$ref": "#/definitions/workerName"
         },
-        "passthroughEnv": {
-          "type": "array",
-          "uniqueItems": true,
-          "items": {
-            "type": "string",
-            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
-            "not": { "pattern": "^[Aa][Tt][Tt][Uu][Nn][Ee]_" }
+        "image": {
+          "type": "string",
+          "minLength": 1
+        },
+        "replicas": {
+          "type": "integer",
+          "const": 1
+        },
+        "enrollmentSecret": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name"
+          ],
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "key": {
+              "$ref": "#/definitions/secretKey"
+            }
           }
         },
-        "imagePullPolicy": { "$ref": "#/definitions/pullPolicy" },
-        "logLevel": { "type": "string", "minLength": 1 },
-        "runtimeClassName": { "type": "string", "minLength": 1 },
-        "nodeSelector": { "$ref": "#/definitions/stringMap" },
+        "custody": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "existingClaim": {
+              "type": "string"
+            },
+            "storageClassName": {
+              "type": "string"
+            },
+            "size": {
+              "$ref": "#/definitions/quantity"
+            }
+          }
+        },
+        "resources": {
+          "$ref": "#/definitions/resources"
+        },
+        "env": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "value"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "RUST_BACKTRACE",
+                  "SSL_CERT_DIR",
+                  "OTEL_EXPORTER_OTLP_ENDPOINT",
+                  "OTEL_SERVICE_NAME"
+                ]
+              },
+              "value": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "imagePullPolicy": {
+          "$ref": "#/definitions/pullPolicy"
+        },
+        "logLevel": {
+          "type": "string",
+          "minLength": 1
+        },
+        "runtimeClassName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "nodeSelector": {
+          "$ref": "#/definitions/stringMap"
+        },
         "tolerations": {
           "type": "array",
-          "items": { "$ref": "#/definitions/toleration" }
+          "items": {
+            "$ref": "#/definitions/toleration"
+          }
         },
-        "stopGracePeriod": { "type": "integer", "minimum": 1 },
-        "maxDatabaseConnections": { "$ref": "#/definitions/databaseConnections" }
+        "stopGracePeriod": {
+          "type": "integer",
+          "minimum": 120
+        }
       }
     },
     "actionWorker": {
-      "type": "object",
-      "additionalProperties": true,
-      "required": ["name", "image"],
-      "allOf": [
-        { "$ref": "#/definitions/workerBaseProperties" }
-      ]
+      "$ref": "#/definitions/workerBaseProperties"
     },
     "sensorWorker": {
-      "type": "object",
-      "additionalProperties": true,
-      "required": ["name", "image"],
-      "allOf": [
-        { "$ref": "#/definitions/workerBaseProperties" },
-        {
-          "type": "object",
-          "additionalProperties": true,
-          "properties": {
-            "notifierWsUrl": { "type": "string" },
-            "allowInsecureNotifierWs": { "type": "boolean" }
-          }
-        }
-      ]
+      "$ref": "#/definitions/workerBaseProperties"
     }
   }
 }

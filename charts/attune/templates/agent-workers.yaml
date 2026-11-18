@@ -1,329 +1,196 @@
-{{- range .Values.actionWorkers }}
-{{- $poolName := .name | lower | replace "_" "-" -}}
-{{- $component := printf "action-worker-%s" $poolName | trunc 63 | trimSuffix "-" -}}
-{{- $resourceName := printf "%s-%s" (include "attune.fullname" $) $component | trunc 63 | trimSuffix "-" -}}
+{{- $groups := list (dict "items" (.Values.actionWorkers | default list) "prefix" "action-worker" "role" "worker" "binary" "attune-agent") (dict "items" (.Values.sensorWorkers | default list) "prefix" "sensor-worker" "role" "sensor" "binary" "attune-sensor-agent") -}}
+{{- $slots := add (len (.Values.actionWorkers | default list)) (len (.Values.sensorWorkers | default list)) -}}
+{{- if gt (int $slots) 0 -}}
+{{- if not .Values.workloadSecurity.enabled }}{{ fail "execution-only hosts require workloadSecurity.enabled" }}{{ end -}}
+{{- $launch := .Values.workloadLaunch -}}
+{{- $origin := required "workloadLaunch.apiUrl requires an HTTPS CP origin; external Docker controller/engine and per-slot enrollment are prerequisites" $launch.apiUrl -}}
+{{- $url := urlParse $origin -}}
+{{- if or (ne $url.scheme "https") (empty $url.host) $url.userinfo $url.query $url.fragment (and (ne $url.path "") (ne $url.path "/")) -}}
+{{- fail "workloadLaunch.apiUrl must be an HTTPS origin without credentials, query, fragment or API path" -}}
+{{- end -}}
+{{- $digest := required "workloadLaunch.agentImage.digest requires an actual validated attune-workload-host-v1 image; current published agent defaults do not implement this contract" $launch.agentImage.digest -}}
+{{- if eq $digest "sha256:24346320bee236e86e256a34f666359bf8c6c2a2db1c8c63c89060788e98ed4f" -}}
+{{- fail "the current published agent pin does not implement attune-workload-host-v1; no legacy workload-host fallback is supported" -}}
+{{- end -}}
+{{- $agentImage := include "attune.image" (dict "root" . "image" $launch.agentImage) -}}
+{{- $secrets := dict -}}{{- $claims := dict -}}{{- $names := dict -}}
+{{- range $group := $groups -}}
+{{- range $pool := $group.items -}}
+{{- $component := printf "%s-%s" $group.prefix ($pool.name | lower | replace "_" "-") | trunc 63 | trimSuffix "-" -}}
+{{- $name := printf "%s-%s" (include "attune.fullname" $) $component | trunc 63 | trimSuffix "-" -}}
+{{- if hasKey $names $name }}{{ fail "execution host slot resource names must be unique after normalization/truncation" }}{{ end -}}
+{{- $_ := set $names $name true -}}
+{{- $replicas := 1 -}}{{- if hasKey $pool "replicas" }}{{ $replicas = int $pool.replicas }}{{ end -}}
+{{- if ne $replicas 1 }}{{ fail "each execution host slot requires replicas: 1 and a unique enrollment; add separate slots for capacity" }}{{ end -}}
+{{- range $removed := list "runtimes" "passthroughEnv" "maxDatabaseConnections" "notifierWsUrl" "allowInsecureNotifierWs" "podSecurityContext" "containerSecurityContext" -}}
+{{- if hasKey $pool $removed }}{{ fail (printf "execution-only host field %s is unsupported; CP profiles select runtime/placement/authority" $removed) }}{{ end -}}
+{{- end -}}
+{{- $enrollment := $pool.enrollmentSecret | default dict -}}
+{{- $secret := required "each execution host slot requires enrollmentSecret.name provisioned by CP" $enrollment.name -}}
+{{- if hasKey $secrets $secret }}{{ fail "each execution host slot requires a unique enrollment Secret" }}{{ end -}}
+{{- $_ := set $secrets $secret true -}}
+{{- $custody := $pool.custody | default dict -}}
+{{- $claim := $custody.existingClaim | default (printf "%s-custody" $name | trunc 63 | trimSuffix "-") -}}
+{{- if hasKey $claims $claim }}{{ fail "each execution host slot requires a unique custody PVC" }}{{ end -}}
+{{- $_ := set $claims $claim true -}}
+{{- $grace := int ($pool.stopGracePeriod | default 120) -}}
+{{- if lt $grace 120 }}{{ fail "execution host shutdown requires at least 120 seconds to withdraw/join and release encrypted custody" }}{{ end -}}
+{{- range $entry := $pool.env -}}
+{{- if or (not (has $entry.name (list "RUST_BACKTRACE" "SSL_CERT_DIR" "OTEL_EXPORTER_OTLP_ENDPOINT" "OTEL_SERVICE_NAME"))) (hasKey $entry "valueFrom") -}}
+{{- fail "execution host env accepts only literal public observability/certificate settings; authority comes from scoped enrollment" -}}
+{{- end -}}{{- end -}}
+{{- if not $custody.existingClaim }}
 ---
-apiVersion: apps/v1
-kind: Deployment
+apiVersion: v1
+kind: PersistentVolumeClaim
 metadata:
-  name: {{ $resourceName | quote }}
+  name: {{ $claim | quote }}
+  annotations:
+    helm.sh/resource-policy: keep
   labels:
     {{- include "attune.labels" $ | nindent 4 }}
     app.kubernetes.io/component: {{ $component | quote }}
 spec:
-  replicas: {{ ternary 0 (int (.replicas | default 1)) (eq (include "attune.postgresqlMajorCutover" $) "true") }}
-  selector:
-    matchLabels:
-      {{- include "attune.selectorLabels" $ | nindent 6 }}
-      app.kubernetes.io/component: {{ $component | quote }}
-  template:
-    metadata:
-      labels:
-        {{- include "attune.selectorLabels" $ | nindent 8 }}
-        app.kubernetes.io/component: {{ $component | quote }}
-      annotations:
-        attune.dev/release-revision: {{ $.Release.Revision | quote }}
-    spec:
-      {{- include "attune.workerPodSecurityContext" (dict "root" $ "worker" .) | nindent 6 }}
-      {{- if $.Values.global.imagePullSecrets }}
-      imagePullSecrets:
-        {{- toYaml $.Values.global.imagePullSecrets | nindent 8 }}
-      {{- end }}
-      {{- if .runtimeClassName }}
-      runtimeClassName: {{ .runtimeClassName | quote }}
-      {{- end }}
-      {{- if .nodeSelector }}
-      nodeSelector:
-        {{- toYaml .nodeSelector | nindent 8 }}
-      {{- end }}
-      {{- if .tolerations }}
-      tolerations:
-        {{- toYaml .tolerations | nindent 8 }}
-      {{- end }}
-      {{- if .stopGracePeriod }}
-      terminationGracePeriodSeconds: {{ .stopGracePeriod }}
-      {{- else }}
-      terminationGracePeriodSeconds: 45
-      {{- end }}
-      initContainers:
-        - name: init-agent
-          image: {{ include "attune.image" (dict "root" $ "image" $.Values.images.agent) | quote }}
-          imagePullPolicy: {{ $.Values.images.agent.pullPolicy | quote }}
-          {{- include "attune.containerSecurityContext" (dict "root" $ "identity" "helper") | nindent 10 }}
-          command: ["/bin/sh", "-ec"]
-          args:
-            - |
-              cp /usr/local/bin/attune-agent /opt/attune/agent/attune-agent
-              cp /usr/local/bin/attune-sensor-agent /opt/attune/agent/attune-sensor-agent
-              for optional_binary in attune-mcp attune; do
-                if [ -x "/usr/local/bin/${optional_binary}" ]; then
-                  cp "/usr/local/bin/${optional_binary}" "/opt/attune/agent/${optional_binary}"
-                fi
-              done
-              chmod +x /opt/attune/agent/attune-agent /opt/attune/agent/attune-sensor-agent /opt/attune/agent/attune-mcp /opt/attune/agent/attune 2>/dev/null || true
-          volumeMounts:
-            - name: agent-bin
-              mountPath: /opt/attune/agent
-        - name: wait-for-schema
-          image: postgres:18-alpine
-          {{- include "attune.containerSecurityContext" (dict "root" $ "identity" "postgres") | nindent 10 }}
-          command: ["/bin/sh", "-ec"]
-          args:
-            - |
-              until PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -tAc "SELECT to_regclass('${DB_SCHEMA}.identity')" | grep -q identity; do
-                echo "waiting for schema";
-                sleep 2;
-              done
-          env:
-            {{- include "attune.databaseCredentialEnvironment" $ | nindent 12 }}
-        {{- include "attune.waitForApiPlatform" $ | nindent 8 }}
-        {{- if and $.Values.rabbitmq.enabled $.Values.rabbitmq.provisioning.enabled }}
-        {{- include "attune.waitForRabbitmqCredentials" $ | nindent 8 }}
-        {{- else }}
-        {{- include "attune.waitForRabbitmqPort" $ | nindent 8 }}
-        {{- end }}
-      containers:
-        - name: worker
-          image: {{ .image | quote }}
-          imagePullPolicy: {{ .imagePullPolicy | default "IfNotPresent" | quote }}
-          {{- include "attune.containerSecurityContext" (dict "root" $ "identity" "worker" "override" (.containerSecurityContext | default dict)) | nindent 10 }}
-          command: ["/opt/attune/agent/attune-agent"]
-          env:
-            {{- include "attune.secretEnvironment" (dict "root" $ "keys" (list "ATTUNE__DATABASE__URL" "ATTUNE__MESSAGE_QUEUE__URL" "ATTUNE__SECURITY__JWT_SECRET" "ATTUNE__SECURITY__ENCRYPTION_KEY")) | nindent 12 }}
-            - name: ATTUNE_CONFIG
-              value: /opt/attune/config.yaml
-            - name: ATTUNE__DATABASE__SCHEMA
-              value: {{ $.Values.database.schema | quote }}
-            - name: ATTUNE__DATABASE__MAX_CONNECTIONS
-              value: {{ .maxDatabaseConnections | default 5 | quote }}
-            - name: ATTUNE_WORKER_TYPE
-              value: container
-            - name: ATTUNE_WORKER_NAME
-              valueFrom:
-                fieldRef:
-                  fieldPath: metadata.name
-            - name: ATTUNE_API_URL
-              value: {{ printf "http://%s:%v" (include "attune.apiServiceName" $) $.Values.api.service.port | quote }}
-            - name: RUST_LOG
-              value: {{ .logLevel | default "info" | quote }}
-            {{- if .passthroughEnv }}
-            - name: ATTUNE__WORKER__PASSTHROUGH_ENV
-              value: {{ join "," .passthroughEnv | quote }}
-            {{- end }}
-            {{- if .runtimes }}
-            - name: ATTUNE_WORKER_RUNTIMES
-              value: {{ join "," .runtimes | quote }}
-            {{- end }}
-            {{- if .env }}
-            {{- toYaml .env | nindent 12 }}
-            {{- end }}
-          resources:
-            {{- toYaml (.resources | default dict) | nindent 12 }}
-          volumeMounts:
-            - name: agent-bin
-              mountPath: /opt/attune/agent
-              readOnly: true
-            - name: config
-              mountPath: /opt/attune/config.yaml
-              subPath: config.yaml
-            - name: packs
-              mountPath: /opt/attune/packs
-              {{- if ne $.Values.storage.mode "object" }}
-              readOnly: true
-              {{- end }}
-            - name: runtime-envs
-              mountPath: /opt/attune/runtime_envs
-            - name: artifacts
-              mountPath: /opt/attune/artifacts
-      volumes:
-        - name: agent-bin
-          emptyDir: {}
-        - name: config
-          configMap:
-            name: {{ printf "%s-config" (include "attune.fullname" $) | quote }}
-        - name: packs
-          {{- if eq $.Values.storage.mode "object" }}
-          {{- include "attune.localCacheVolume" (dict "root" $ "volume" $.Values.storage.local.packs) | nindent 10 }}
-          {{- else }}
-          persistentVolumeClaim:
-            claimName: {{ printf "%s-packs" (include "attune.fullname" $) | quote }}
-          {{- end }}
-        - name: runtime-envs
-          {{- if eq $.Values.storage.mode "object" }}
-          {{- include "attune.localCacheVolume" (dict "root" $ "volume" $.Values.storage.local.runtimeEnvs) | nindent 10 }}
-          {{- else }}
-          persistentVolumeClaim:
-            claimName: {{ printf "%s-runtime-envs" (include "attune.fullname" $) | quote }}
-          {{- end }}
-        - name: artifacts
-          {{- if eq $.Values.storage.mode "object" }}
-          emptyDir:
-            sizeLimit: {{ $.Values.storage.local.artifactStaging.sizeLimit | quote }}
-          {{- else }}
-          persistentVolumeClaim:
-            claimName: {{ printf "%s-artifacts" (include "attune.fullname" $) | quote }}
-          {{- end }}
-{{ end }}
-{{ range .Values.sensorWorkers }}
-{{- $poolName := .name | lower | replace "_" "-" -}}
-{{- $component := printf "sensor-worker-%s" $poolName | trunc 63 | trimSuffix "-" -}}
-{{- $resourceName := printf "%s-%s" (include "attune.fullname" $) $component | trunc 63 | trimSuffix "-" -}}
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: {{ $resourceName | quote }}
-  labels:
-    {{- include "attune.labels" $ | nindent 4 }}
-    app.kubernetes.io/component: {{ $component | quote }}
-spec:
-  replicas: {{ ternary 0 (int (.replicas | default 1)) (eq (include "attune.postgresqlMajorCutover" $) "true") }}
-  selector:
-    matchLabels:
-      {{- include "attune.selectorLabels" $ | nindent 6 }}
-      app.kubernetes.io/component: {{ $component | quote }}
-  template:
-    metadata:
-      labels:
-        {{- include "attune.selectorLabels" $ | nindent 8 }}
-        app.kubernetes.io/component: {{ $component | quote }}
-      annotations:
-        attune.dev/release-revision: {{ $.Release.Revision | quote }}
-    spec:
-      {{- include "attune.workerPodSecurityContext" (dict "root" $ "worker" .) | nindent 6 }}
-      {{- if $.Values.global.imagePullSecrets }}
-      imagePullSecrets:
-        {{- toYaml $.Values.global.imagePullSecrets | nindent 8 }}
-      {{- end }}
-      {{- if .runtimeClassName }}
-      runtimeClassName: {{ .runtimeClassName | quote }}
-      {{- end }}
-      {{- if .nodeSelector }}
-      nodeSelector:
-        {{- toYaml .nodeSelector | nindent 8 }}
-      {{- end }}
-      {{- if .tolerations }}
-      tolerations:
-        {{- toYaml .tolerations | nindent 8 }}
-      {{- end }}
-      terminationGracePeriodSeconds: {{ .stopGracePeriod | default 45 }}
-      initContainers:
-        - name: init-agent
-          image: {{ include "attune.image" (dict "root" $ "image" $.Values.images.agent) | quote }}
-          imagePullPolicy: {{ $.Values.images.agent.pullPolicy | quote }}
-          {{- include "attune.containerSecurityContext" (dict "root" $ "identity" "helper") | nindent 10 }}
-          command: ["/bin/sh", "-ec"]
-          args:
-            - |
-              cp /usr/local/bin/attune-agent /opt/attune/agent/attune-agent
-              cp /usr/local/bin/attune-sensor-agent /opt/attune/agent/attune-sensor-agent
-              for optional_binary in attune-mcp attune; do
-                if [ -x "/usr/local/bin/${optional_binary}" ]; then
-                  cp "/usr/local/bin/${optional_binary}" "/opt/attune/agent/${optional_binary}"
-                fi
-              done
-              chmod +x /opt/attune/agent/attune-agent /opt/attune/agent/attune-sensor-agent /opt/attune/agent/attune-mcp /opt/attune/agent/attune 2>/dev/null || true
-          volumeMounts:
-            - name: agent-bin
-              mountPath: /opt/attune/agent
-        - name: wait-for-schema
-          image: postgres:18-alpine
-          {{- include "attune.containerSecurityContext" (dict "root" $ "identity" "postgres") | nindent 10 }}
-          command: ["/bin/sh", "-ec"]
-          args:
-            - |
-              until PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -tAc "SELECT to_regclass('${DB_SCHEMA}.identity')" | grep -q identity; do
-                echo "waiting for schema";
-                sleep 2;
-              done
-          env:
-            {{- include "attune.databaseCredentialEnvironment" $ | nindent 12 }}
-        {{- include "attune.waitForApiPlatform" $ | nindent 8 }}
-        {{- if and $.Values.rabbitmq.enabled $.Values.rabbitmq.provisioning.enabled }}
-        {{- include "attune.waitForRabbitmqCredentials" $ | nindent 8 }}
-        {{- else }}
-        {{- include "attune.waitForRabbitmqPort" $ | nindent 8 }}
-        {{- end }}
-      containers:
-        - name: sensor
-          image: {{ .image | quote }}
-          imagePullPolicy: {{ .imagePullPolicy | default "IfNotPresent" | quote }}
-          {{- include "attune.containerSecurityContext" (dict "root" $ "identity" "worker" "override" (.containerSecurityContext | default dict)) | nindent 10 }}
-          command: ["/opt/attune/agent/attune-sensor-agent"]
-          env:
-            {{- include "attune.secretEnvironment" (dict "root" $ "keys" (list "ATTUNE__DATABASE__URL" "ATTUNE__MESSAGE_QUEUE__URL" "ATTUNE__SECURITY__JWT_SECRET")) | nindent 12 }}
-            - name: ATTUNE_CONFIG
-              value: /opt/attune/config.yaml
-            - name: ATTUNE__DATABASE__SCHEMA
-              value: {{ $.Values.database.schema | quote }}
-            - name: ATTUNE__DATABASE__MAX_CONNECTIONS
-              value: {{ .maxDatabaseConnections | default 5 | quote }}
-            - name: ATTUNE__WORKER__WORKER_TYPE
-              value: container
-            - name: ATTUNE_API_URL
-              value: {{ printf "http://%s:%v" (include "attune.apiServiceName" $) $.Values.api.service.port | quote }}
-            - name: ATTUNE_NOTIFIER_WS_URL
-              value: {{ .notifierWsUrl | default (printf "ws://%s:%v/ws" (include "attune.notifierServiceName" $) $.Values.notifier.service.port) | quote }} # nosemgrep: javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket -- Chart default is an explicit in-cluster plaintext endpoint.
-            - name: ATTUNE__SENSOR__ALLOW_INSECURE_NOTIFIER_WS
-              value: {{ .allowInsecureNotifierWs | default false | quote }}
-            - name: ATTUNE_PACKS_BASE_DIR
-              value: /opt/attune/packs
-            - name: RUST_LOG
-              value: {{ .logLevel | default "info" | quote }}
-            {{- if .passthroughEnv }}
-            - name: ATTUNE__SENSOR__PASSTHROUGH_ENV
-              value: {{ join "," .passthroughEnv | quote }}
-            {{- end }}
-            {{- if .runtimes }}
-            - name: ATTUNE_SENSOR_RUNTIMES
-              value: {{ join "," .runtimes | quote }}
-            {{- end }}
-            {{- if .env }}
-            {{- toYaml .env | nindent 12 }}
-            {{- end }}
-          resources:
-            {{- toYaml (.resources | default dict) | nindent 12 }}
-          volumeMounts:
-            - name: agent-bin
-              mountPath: /opt/attune/agent
-              readOnly: true
-            - name: config
-              mountPath: /opt/attune/config.yaml
-              subPath: config.yaml
-            - name: packs
-              mountPath: /opt/attune/packs
-              {{- if ne $.Values.storage.mode "object" }}
-              readOnly: true
-              {{- end }}
-            - name: runtime-envs
-              mountPath: /opt/attune/runtime_envs
-            {{- if eq $.Values.storage.mode "object" }}
-            - name: artifacts
-              mountPath: /opt/attune/artifacts
-            {{- end }}
-      volumes:
-        - name: agent-bin
-          emptyDir: {}
-        - name: config
-          configMap:
-            name: {{ printf "%s-config" (include "attune.fullname" $) | quote }}
-        - name: packs
-          {{- if eq $.Values.storage.mode "object" }}
-          {{- include "attune.localCacheVolume" (dict "root" $ "volume" $.Values.storage.local.packs) | nindent 10 }}
-          {{- else }}
-          persistentVolumeClaim:
-            claimName: {{ printf "%s-packs" (include "attune.fullname" $) | quote }}
-          {{- end }}
-        - name: runtime-envs
-          {{- if eq $.Values.storage.mode "object" }}
-          {{- include "attune.localCacheVolume" (dict "root" $ "volume" $.Values.storage.local.runtimeEnvs) | nindent 10 }}
-          {{- else }}
-          persistentVolumeClaim:
-            claimName: {{ printf "%s-runtime-envs" (include "attune.fullname" $) | quote }}
-          {{- end }}
-        {{- if eq $.Values.storage.mode "object" }}
-        - name: artifacts
-          emptyDir:
-            sizeLimit: {{ $.Values.storage.local.artifactStaging.sizeLimit | quote }}
-        {{- end }}
+  accessModes: [ReadWriteOnce]
+  {{- if $custody.storageClassName }}
+  storageClassName: {{ $custody.storageClassName | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ $custody.size | default "1Gi" | quote }}
 {{- end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name | quote }}
+  labels:
+    {{- include "attune.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $component | quote }}
+spec:
+  replicas: {{ ternary 0 1 (eq (include "attune.postgresqlMajorCutover" $) "true") }}
+  strategy:
+    type: Recreate
+  progressDeadlineSeconds: 600
+  selector:
+    matchLabels:
+      {{- include "attune.selectorLabels" $ | nindent 6 }}
+      app.kubernetes.io/component: {{ $component | quote }}
+  template:
+    metadata:
+      labels:
+        {{- include "attune.selectorLabels" $ | nindent 8 }}
+        app.kubernetes.io/component: {{ $component | quote }}
+      annotations:
+        attune.dev/release-revision: {{ $.Release.Revision | quote }}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      {{- if $.Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml $.Values.global.imagePullSecrets | nindent 8 }}
+      {{- end }}
+      {{- if $pool.runtimeClassName }}
+      runtimeClassName: {{ $pool.runtimeClassName | quote }}
+      {{- end }}
+      {{- if $pool.nodeSelector }}
+      nodeSelector:
+        {{- toYaml $pool.nodeSelector | nindent 8 }}
+      {{- end }}
+      {{- if $pool.tolerations }}
+      tolerations:
+        {{- toYaml $pool.tolerations | nindent 8 }}
+      {{- end }}
+      terminationGracePeriodSeconds: {{ $grace }}
+      initContainers:
+        - name: init-agent
+          image: {{ $agentImage | quote }}
+          imagePullPolicy: {{ $launch.agentImage.pullPolicy | quote }}
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          command: ["/bin/sh", "-ec"]
+          args:
+            - |
+              printf 'attune-workload-host-v1\n' > /opt/attune/agent/expected-contract
+              for binary in attune-agent attune-sensor-agent; do
+                if ! env -i PATH=/usr/local/bin:/usr/bin:/bin "/usr/local/bin/$binary" --workload-host-contract > /opt/attune/agent/observed-contract; then
+                  echo 'agent image lacks execution-only workload-host contract' >&2; exit 1
+                fi
+                cmp -s /opt/attune/agent/expected-contract /opt/attune/agent/observed-contract || { echo 'incompatible workload-host contract' >&2; exit 1; }
+                cp "/usr/local/bin/$binary" "/opt/attune/agent/$binary"
+              done
+              cp /etc/ssl/certs/ca-certificates.crt /opt/attune/agent/ca-certificates.crt
+              test -s /opt/attune/agent/ca-certificates.crt
+              chmod 0555 /opt/attune/agent/attune-agent /opt/attune/agent/attune-sensor-agent
+              chmod 0444 /opt/attune/agent/ca-certificates.crt
+              rm /opt/attune/agent/expected-contract /opt/attune/agent/observed-contract
+          volumeMounts:
+            - name: agent-bin
+              mountPath: /opt/attune/agent
+      containers:
+        - name: {{ $group.role }}
+          image: {{ $pool.image | quote }}
+          imagePullPolicy: {{ $pool.imagePullPolicy | default "IfNotPresent" | quote }}
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          command: [{{ printf "/opt/attune/agent/%s" $group.binary | quote }}]
+          env:
+            - name: ATTUNE_API_URL
+              value: {{ $origin | quote }}
+            - name: ATTUNE_WORKLOAD_ENROLLMENT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secret | quote }}
+                  key: {{ $enrollment.key | default "token" | quote }}
+            - name: ATTUNE_WORKLOAD_CUSTODY_DIR
+              value: /var/lib/attune/custody/host
+            - name: SSL_CERT_FILE
+              value: /opt/attune/agent/ca-certificates.crt
+            - name: HOME
+              value: /tmp
+            - name: TMPDIR
+              value: /tmp
+            - name: RUST_LOG
+              value: {{ $pool.logLevel | default "info" | quote }}
+            {{- with $pool.env }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          resources:
+            {{- toYaml ($pool.resources | default dict) | nindent 12 }}
+          volumeMounts:
+            - name: agent-bin
+              mountPath: /opt/attune/agent
+              readOnly: true
+            - name: custody
+              mountPath: /var/lib/attune/custody
+            - name: scratch
+              mountPath: /tmp
+      volumes:
+        - name: agent-bin
+          emptyDir: {}
+        - name: custody
+          persistentVolumeClaim:
+            claimName: {{ $claim | quote }}
+        - name: scratch
+          emptyDir:
+            sizeLimit: 64Mi
+{{ end -}}
+{{ end -}}
+{{ end -}}

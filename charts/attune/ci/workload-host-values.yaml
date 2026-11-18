@@ -1,0 +1,19 @@
+# Render-only synthetic pins and CP-issued-secret names. These are NOT images
+# or credentials and cannot install a supported deployment. Real-image tests
+# must select source-built bytes and exercise the actual execution-only entry.
+security:
+  existingSecret: fixture-cp-runtime
+workloadLaunch:
+  apiUrl: https://cp.example.invalid/
+  agentImage:
+    digest: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+actionWorkers:
+  - name: full
+    image: example.invalid/host@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+    enrollmentSecret:
+      name: fixture-action-enrollment
+sensorWorkers:
+  - name: default
+    image: example.invalid/host@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+    enrollmentSecret:
+      name: fixture-sensor-enrollment

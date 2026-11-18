@@ -10,13 +10,15 @@ from pathlib import Path
 import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
+# Public synthetic prerequisites; not installable image or enrollment evidence.
+WORKLOAD_SETUP_ARGS = ["--workload-api-url", "https://cp.example.invalid/", "--workload-agent-digest", "sha256:" + "a" * 64, "--action-enrollment-secret", "fixture-action-enrollment", "--sensor-enrollment-secret", "fixture-sensor-enrollment"]
 CHART = ROOT / "charts" / "attune"
 POSTGRES_IMAGE = "postgres:18.6-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873"
 CNPG_IMAGE = "ghcr.io/cloudnative-pg/postgresql:18.6-standard-trixie@sha256:79be0d10e78b7ac4520cf6c5db199a8bb7f6de53b3229f47e90cab5865528a0d"
 
 
 def render(upgrade=False, external=False, cutover=False):
-    command = ["helm", "template", "native-test", str(CHART),
+    command = ["helm", "template", "native-test", str(CHART), "--values", str(Path(__file__).resolve().parent.parent / "charts/attune/ci/workload-host-values.yaml"),
                "--set", "security.existingSecret=native-runtime",
                "--set", "database.postgresql.enabled=true",
                "--set", "database.postgresql.provisioning.enabled=true",
@@ -116,7 +118,7 @@ class NativePostgresqlTests(unittest.TestCase):
 
     def test_generated_cnpg_image_identity_and_extensions(self):
         with tempfile.TemporaryDirectory(prefix="native-cnpg-") as directory:
-            subprocess.run([str(ROOT / "scripts/generate-attune-setup.sh"), "--output-dir", directory],
+            subprocess.run([str(ROOT / "scripts/generate-attune-setup.sh"), *WORKLOAD_SETUP_ARGS, "--output-dir", directory],
                            check=True, capture_output=True, text=True)
             catalog, cluster = list(yaml.safe_load_all((Path(directory) / "postgresql.yaml").read_text()))
             self.assertEqual(catalog["spec"]["images"], [{"major": 18, "image": CNPG_IMAGE}])
@@ -136,7 +138,7 @@ class NativePostgresqlTests(unittest.TestCase):
             legacy.write_text("existing database manifest\n")
             values = Path(directory) / "values.yaml"
             values.write_text("existing values\n")
-            result = subprocess.run([str(ROOT / "scripts/generate-attune-setup.sh"), "--output-dir", directory, "--force"],
+            result = subprocess.run([str(ROOT / "scripts/generate-attune-setup.sh"), *WORKLOAD_SETUP_ARGS, "--output-dir", directory, "--force"],
                                     capture_output=True, text=True)
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("use a new output directory", result.stderr)
