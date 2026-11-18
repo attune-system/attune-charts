@@ -1360,7 +1360,7 @@ done
 
 default_shared_modes="$({
   docker run --rm -i mikefarah/yq:4.47.2 \
-    eval-all --no-doc 'select(.kind == "PersistentVolumeClaim") | [.metadata.name, .spec.accessModes[0]] | @tsv' - \
+    eval-all --no-doc 'select(.kind == "PersistentVolumeClaim" and (.metadata.name == "verify-attune-packs" or .metadata.name == "verify-attune-runtime-envs" or .metadata.name == "verify-attune-artifacts")) | [.metadata.name, .spec.accessModes[0]] | @tsv' - \
     < "$render_dir/attune-bundled-bundled.yaml"
 })"
 expected_default_shared_modes=$'verify-attune-packs\tReadWriteOnce\tverify-attune-runtime-envs\tReadWriteOnce\tverify-attune-artifacts\tReadWriteOnce'

@@ -97,6 +97,16 @@ class HostContractTests(unittest.TestCase):
         claims = [item for item in items if item.get("kind") == "PersistentVolumeClaim"
                   and item["metadata"]["labels"].get("app.kubernetes.io/component", "").startswith(("action-worker-", "sensor-worker-"))]
         self.assertEqual(len(claims), 2)
+        by_name = {claim["metadata"]["name"]: claim for claim in claims}
+        references = set()
+        for deployment in hosts(items):
+            pod = deployment["spec"]["template"]["spec"]
+            name = next(v["persistentVolumeClaim"]["claimName"] for v in pod["volumes"] if v["name"] == "custody")
+            self.assertNotIn(name, references)
+            references.add(name)
+            self.assertEqual(by_name[name]["metadata"]["labels"]["app.kubernetes.io/component"],
+                             deployment["metadata"]["labels"]["app.kubernetes.io/component"])
+        self.assertEqual(references, set(by_name))
         for claim in claims:
             self.assertEqual(claim["metadata"]["annotations"]["helm.sh/resource-policy"], "keep")
             self.assertFalse(claim["metadata"].get("ownerReferences"))
