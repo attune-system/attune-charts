@@ -1436,7 +1436,8 @@ for chart in "$root_dir"/charts/*; do
   chart_name="$(basename "$chart")"
   chart_args=()
   if [[ "$chart_name" == attune ]]; then
-    chart_args+=(--set security.existingSecret=verify-attune-secrets)
+    chart_args+=(--values "$root_dir/charts/attune/ci/workload-host-values.yaml"
+                  --set security.existingSecret=verify-attune-secrets)
   fi
   helm lint --strict "$chart" "${chart_args[@]}"
   helm template verify "$chart" --namespace verify "${chart_args[@]}" > "$render_dir/$chart_name.yaml"
