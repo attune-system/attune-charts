@@ -345,6 +345,29 @@ artifact staging volumes. Disable `workloadSecurity.enabled` only when the
 cluster cannot accept these contexts and another admission/security mechanism
 provides equivalent controls.
 
+## Configure the login disclosure and branding
+
+```yaml
+security:
+  loginDisclosure: |-
+    Authorized use only.
+    Follow your organization's acceptable use policy.
+branding:
+  logoUrl: https://assets.example.com/attune/logo.svg
+  iconUrl: https://assets.example.com/attune/icon.svg
+  faviconUrl: /branding/favicon.png
+  workflowWatermarkUrl: /branding/workflow-watermark.svg
+```
+
+These values are optional and become startup settings in the Attune ConfigMap.
+The public, plain-text disclosure appears before web and CLI sign-in. Use
+public HTTPS URLs or absolute paths on the Attune web origin for the images.
+`logoUrl` is used on the sign-in page and expanded sidebar, `iconUrl` in the
+compact sidebar, and `faviconUrl` in the browser tab. The compact sidebar falls
+back to `logoUrl` when supplied. A custom logo or compact icon hides the built-in
+workflow watermark. Set `workflowWatermarkUrl` to display a custom watermark.
+After a Helm upgrade, reload the web app to load the updated settings.
+
 ## Configure OIDC and Active Directory
 
 Rancher exposes both identity providers in the generated chart form under

@@ -86,6 +86,9 @@ metadata:
 data:
   config.yaml: |
     security:
+      {{- with .Values.security.loginDisclosure }}
+      login_disclosure: {{ . | quote }}
+      {{- end }}
       login_page:
         show_local_login: {{ .Values.security.loginPage.showLocalLogin }}
         show_oidc_login: {{ .Values.security.loginPage.showOidcLogin }}
@@ -148,6 +151,23 @@ data:
         {{- with .Values.security.activeDirectory.providerIconUrl }}
         provider_icon_url: {{ . | quote }}
         {{- end }}
+    {{- with .Values.branding }}
+    {{- if or .logoUrl .iconUrl .faviconUrl .workflowWatermarkUrl }}
+    branding:
+      {{- with .logoUrl }}
+      logo_url: {{ . | quote }}
+      {{- end }}
+      {{- with .iconUrl }}
+      icon_url: {{ . | quote }}
+      {{- end }}
+      {{- with .faviconUrl }}
+      favicon_url: {{ . | quote }}
+      {{- end }}
+      {{- with .workflowWatermarkUrl }}
+      workflow_watermark_url: {{ . | quote }}
+      {{- end }}
+    {{- end }}
+    {{- end }}
     pack_registry:
       enabled: true
       allow_unverified_direct_remote_installs: {{ .Values.packRegistry.allowUnverifiedDirectRemoteInstalls }}
