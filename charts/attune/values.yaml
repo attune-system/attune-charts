@@ -49,6 +49,8 @@ security:
   identitySecret:
     # Optional API-only Secret for OIDC and Active Directory credentials.
     existingSecret: ""
+  # Optional public, plain-text notice shown before web and CLI login.
+  loginDisclosure: ""
   loginPage:
     showLocalLogin: true
     showOidcLogin: true
@@ -91,6 +93,13 @@ security:
     providerName: ad
     providerLabel: Active Directory
     providerIconUrl: ""
+
+branding:
+  # Optional public HTTPS URLs or absolute paths on the Attune web origin.
+  logoUrl: ""
+  iconUrl: ""
+  faviconUrl: ""
+  workflowWatermarkUrl: ""
 
 database:
   schema: attune

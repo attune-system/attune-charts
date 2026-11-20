@@ -76,6 +76,7 @@
       "required": ["existingSecret", "identitySecret", "loginPage", "oidc", "activeDirectory"],
       "properties": {
         "existingSecret": { "type": "string" },
+        "loginDisclosure": { "type": "string" },
         "identitySecret": {
           "type": "object",
           "additionalProperties": true,
@@ -157,6 +158,16 @@
             "providerIconUrl": { "type": "string" }
           }
         }
+      }
+    },
+    "branding": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "logoUrl": { "type": "string" },
+        "iconUrl": { "type": "string" },
+        "faviconUrl": { "type": "string" },
+        "workflowWatermarkUrl": { "type": "string" }
       }
     },
     "database": {
