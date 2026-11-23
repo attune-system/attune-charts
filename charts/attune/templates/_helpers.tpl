@@ -415,3 +415,28 @@ securityContext:
         sleep 2
       done
 {{- end -}}
+
+{{- define "attune.managerDatabaseName" -}}
+{{- $scope := printf "%s/%s" .Release.Namespace .Release.Name -}}
+{{- printf "%s-manager-db-%s" ((include "attune.fullname" .) | trunc 34 | trimSuffix "-") (sha256sum $scope | trunc 10) -}}
+{{- end -}}
+
+{{- define "attune.managerDatabasePoolName" -}}
+{{- $scope := printf "%s/%s/%s/%s" .root.Release.Namespace .root.Release.Name .pool.role .pool.name -}}
+{{- printf "%s-%s-%s" (.pool.role | trunc 6) (.pool.name | trunc 25 | trimSuffix "-") (sha256sum $scope | trunc 12) -}}
+{{- end -}}
+
+{{- define "attune.managerDatabaseCAMount" -}}
+{{- if .Values.managerDatabase.caSecret -}}
+- {name: manager-postgres-ca, mountPath: /var/run/attune-postgres, readOnly: true}
+{{- end -}}
+{{- end -}}
+
+{{- define "attune.managerDatabaseCAVolume" -}}
+{{- if .Values.managerDatabase.caSecret -}}
+- name: manager-postgres-ca
+  secret:
+    secretName: {{ .Values.managerDatabase.caSecret | quote }}
+    items: [{key: ca.crt, path: ca.crt}]
+{{- end -}}
+{{- end -}}

@@ -1219,3 +1219,52 @@ web:
           - attune.example.com
         secretName: attune-example-com-tls
 ```
+
+
+## Provision Kubernetes-bound manager database logins
+
+Use this opt-in profile with application images containing the matching
+manager database migrations and binaries. The platform still schedules
+and serves workloads through the Attune API. Each enabled manager receives
+one restricted PostgreSQL identity for its enrolled process.
+
+See [manager-database-values.yaml](ci/manager-database-values.yaml) for the
+setting names. Use an HTTPS API endpoint and a PostgreSQL endpoint that
+serves trusted TLS. Require SCRAM for the manager roles in PostgreSQL's
+host authentication configuration. The manager PostgreSQL URL contains
+connection settings only. Mount a custom database CA under `/var/run/attune-postgres/ca.crt`
+by setting `managerDatabase.caSecret`. Its Secret has the key `ca.crt`.
+Install the API trust roots in the manager image if needed. Supply one
+chart-compatible runtime image with Bubblewrap per pool. Ensure the chosen
+container security context and runtime permit its sandbox.
+
+- Set `managerDatabase.loginPrefix` to a role prefix unique within the
+  PostgreSQL cluster, and `apiDatabaseRole` to the role the API uses.
+- Supply an admin Secret with the key `pg_service.conf` and a service
+  named `attune-manager-provision`. Set `host`, `port`, `dbname`, `user`,
+  `password`, and verified TLS settings in that service. The post-migration
+  Helm Job uses this Secret to create the installation roles and install
+  the guarded operations. The Job's administrator must be able to install
+  grants and change ownership of the functions created by migration.
+- Supply a separate supervisor Secret with keys `password` and `url`. The
+  Job creates the `<loginPrefix>_supervisor` login from the password when
+  absent. The supervisor mounts only its TLS-verified connection URL.
+  Rotate this installation credential in PostgreSQL and the Secret
+  together, then restart the supervisor to load it.
+- Supply each pool's enrollment Secret with key `key` and the corresponding
+  SHA-256 digest in `enrollmentDigest`. Action pools also require a stable
+  `log-key` in the Secret and a working RWO storage class for the custody
+  spool. Use separate action pools with separate Secrets for per-slot
+  custody keys. The chart projects each pool's Pod token with the release
+  audience.
+- Set `managerDatabase.egress` to the site's Kubernetes egress rules when
+  the chart should create a NetworkPolicy. Include DNS, the configured API
+  and PostgreSQL endpoints, and any egress required by workloads.
+  Keep Pod and ServiceAccount creation in this namespace under trusted
+  operators. The API receives TokenReview and namespaced Pod reads. The
+  supervisor receives Pod reads. Manager ServiceAccounts receive a
+  projected audience-specific token and have no Kubernetes API grants.
+
+For rollback, set each restricted pool's `replicas` to zero while the
+credential task remains enabled. After the supervisor retires the existing
+SQL logins, disable the profile and remove its provisioning credentials.

@@ -51,8 +51,11 @@ spec:
     spec:
       terminationGracePeriodSeconds: {{ .Values.api.terminationGracePeriodSeconds }}
       {{- include "attune.podSecurityContext" (dict "root" . "useLocalStorage" (eq .Values.storage.mode "object")) | nindent 6 }}
-      {{- if eq .Values.storage.mode "object" }}
+      {{- if or (eq .Values.storage.mode "object") .Values.managerDatabase.enabled }}
       serviceAccountName: {{ include "attune.apiServiceAccountName" . | quote }}
+      {{- end }}
+      {{- if .Values.managerDatabase.enabled }}
+      automountServiceAccountToken: true
       {{- end }}
       {{- if .Values.global.imagePullSecrets }}
       imagePullSecrets:
@@ -272,8 +275,11 @@ spec:
         attune.dev/release-revision: {{ .Release.Revision | quote }}
     spec:
       {{- include "attune.podSecurityContext" (dict "root" . "useLocalStorage" (eq .Values.storage.mode "object")) | nindent 6 }}
-      {{- if eq .Values.storage.mode "object" }}
+      {{- if or (eq .Values.storage.mode "object") .Values.managerDatabase.enabled }}
       serviceAccountName: {{ include "attune.supervisorServiceAccountName" . | quote }}
+      {{- end }}
+      {{- if .Values.managerDatabase.enabled }}
+      automountServiceAccountToken: true
       {{- end }}
       {{- if .Values.global.imagePullSecrets }}
       imagePullSecrets:
@@ -316,7 +322,20 @@ spec:
               subPath: config.yaml
             - name: artifacts
               mountPath: /opt/attune/artifacts
+            {{- if .Values.managerDatabase.enabled }}
+            - name: manager-db-caller
+              mountPath: /var/run/attune-supervisor-db
+              readOnly: true
+            {{- include "attune.managerDatabaseCAMount" . | nindent 12 }}
+            {{- end }}
       volumes:
+        {{- if .Values.managerDatabase.enabled }}
+        - name: manager-db-caller
+          secret:
+            secretName: {{ .Values.managerDatabase.supervisorSecret | quote }}
+            items: [{key: url, path: url}]
+        {{- include "attune.managerDatabaseCAVolume" . | nindent 8 }}
+        {{- end }}
         - name: config
           configMap:
             name: {{ printf "%s-config" (include "attune.fullname" .) | quote }}

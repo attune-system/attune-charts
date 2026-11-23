@@ -482,3 +482,16 @@ sensorWorkers:
 #     image: nikolaik/python-nodejs:python3.12-nodejs22-slim
 #     replicas: 1
 #     runtimes: [python, node, shell, native]
+
+# Optional Kubernetes-bound credentials for scoped manager database operations.
+managerDatabase:
+  enabled: false
+  apiUrl: ""
+  postgresUrl: ""
+  loginPrefix: ""
+  adminSecret: ""
+  supervisorSecret: ""
+  apiDatabaseRole: ""
+  caSecret: ""
+  egress: null
+  pools: []

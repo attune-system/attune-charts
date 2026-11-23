@@ -1,0 +1,22 @@
+security:
+  existingSecret: attune-test-runtime
+managerDatabase:
+  enabled: true
+  apiUrl: https://attune.example.test
+  postgresUrl: postgresql://database.example.test/attune?sslmode=verify-full&sslrootcert=/var/run/attune-postgres/ca.crt
+  loginPrefix: attune_fixture
+  adminSecret: attune-test-db-admin
+  supervisorSecret: attune-test-db-supervisor
+  apiDatabaseRole: attune
+  caSecret: attune-test-db-ca
+  pools:
+    - role: action
+      name: build
+      image: registry.example.test/action-manager:test
+      enrollmentSecret: attune-test-action
+      enrollmentDigest: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    - role: sensor
+      name: observe
+      image: registry.example.test/sensor-manager:test
+      enrollmentSecret: attune-test-sensor
+      enrollmentDigest: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"

@@ -85,6 +85,33 @@ metadata:
     {{- include "attune.labels" . | nindent 4 }}
 data:
   config.yaml: |
+    {{- if .Values.managerDatabase.enabled }}
+    maintenance:
+      manager_database_credentials_file: /var/run/attune-supervisor-db/url
+    manager_enrollments:
+      {{- range .Values.managerDatabase.pools }}
+      - role: {{ .role | quote }}
+        pool: {{ .name | quote }}
+        secret_sha256: {{ required "managerDatabase.pools[].enrollmentDigest is required" .enrollmentDigest | quote }}
+        {{- with .labels }}
+        labels:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+        {{- with .taints }}
+        taints:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+      {{- end }}
+    manager_kubernetes_database:
+      namespace: {{ .Release.Namespace | quote }}
+      audience: {{ include "attune.managerDatabaseName" . | quote }}
+      pools:
+        {{- range .Values.managerDatabase.pools }}
+        - role: {{ .role | quote }}
+          pool: {{ .name | quote }}
+          service_account: {{ include "attune.managerDatabasePoolName" (dict "root" $ "pool" .) | quote }}
+        {{- end }}
+    {{- end }}
     security:
       {{- with .Values.security.loginDisclosure }}
       login_disclosure: {{ . | quote }}

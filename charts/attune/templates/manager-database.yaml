@@ -1,0 +1,307 @@
+{{- if .Values.managerDatabase.enabled }}
+{{- $root := . }}
+{{- $settings := .Values.managerDatabase }}
+{{- $key := include "attune.managerDatabaseName" . }}
+{{- $prefix := required "managerDatabase.loginPrefix is required" $settings.loginPrefix }}
+{{- if not (regexMatch "^[a-z][a-z0-9_]{0,27}$" $prefix) }}
+{{- fail "managerDatabase.loginPrefix must be a unique PostgreSQL role prefix of at most 28 characters" }}
+{{- end }}
+{{- if not (hasPrefix "https://" $settings.apiUrl) }}
+{{- fail "managerDatabase.apiUrl requires HTTPS" }}
+{{- end }}
+{{- if or (not (hasPrefix "postgresql://" $settings.postgresUrl)) (not (regexMatch "[?&]sslmode=verify-full(&|$)" $settings.postgresUrl)) (contains "@" $settings.postgresUrl) (regexMatch "(?i)[?&](password|passfile|user)=" $settings.postgresUrl) }}
+{{- fail "managerDatabase.postgresUrl requires a credential-free PostgreSQL URL with sslmode=verify-full" }}
+{{- end }}
+{{- if empty $settings.pools }}
+{{- fail "managerDatabase.pools requires at least one action or sensor pool" }}
+{{- end }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ $key }}
+rules:
+  - apiGroups: ["authentication.k8s.io"]
+    resources: ["tokenreviews"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ $key }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ $key }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "attune.apiServiceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $key }}
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $key }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $key }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "attune.apiServiceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+  - kind: ServiceAccount
+    name: {{ include "attune.supervisorServiceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $key }}
+data:
+  provision.sql: |
+    {{- .Files.Get "files/manager-db/provision.sql" | nindent 4 }}
+  provision-retirement.sql: |
+    {{- .Files.Get "files/manager-db/provision-retirement.sql" | nindent 4 }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $key }}
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  activeDeadlineSeconds: 320
+  backoffLimit: 2
+  template:
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      {{- include "attune.podSecurityContext" (dict "root" . "useLocalStorage" false) | nindent 6 }}
+      containers:
+        - name: provision
+          image: postgres:18-alpine
+          {{- include "attune.containerSecurityContext" (dict "root" . "identity" "postgres") | nindent 10 }}
+          command: ["/bin/sh", "-ec"]
+          args:
+            - |
+              export PGCONNECT_TIMEOUT=5
+              export PGOPTIONS="-c search_path=$APP_SCHEMA"
+              until psql -X -Atq -c 'SELECT to_regclass(current_schema() || $q$.manager_db_credential$q$) IS NOT NULL' | grep -qx t; do
+                sleep 2
+              done
+              psql -X -q -v ON_ERROR_STOP=1 -v prefix="$LOGIN_PREFIX" -v caller="$CALLER_ROLE" <<'SQL'
+              \getenv caller_password CALLER_PASSWORD
+              SELECT format('CREATE ROLE %I NOLOGIN', :'prefix' || suffix)
+              FROM (VALUES ('_operations'), ('_action'), ('_sensor')) AS roles(suffix)
+              WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = :'prefix' || suffix)
+              \gexec
+              SELECT format('CREATE ROLE %I NOLOGIN CREATEROLE', :'prefix' || '_provisioner')
+              WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = :'prefix' || '_provisioner')
+              \gexec
+              SELECT format('CREATE ROLE %I LOGIN PASSWORD %L', :'caller', :'caller_password')
+              WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = :'caller')
+              \gexec
+              SQL
+              psql -X -q -v app_schema="$APP_SCHEMA" -v operation_owner="${LOGIN_PREFIX}_operations" \
+                -v action_group="${LOGIN_PREFIX}_action" -v sensor_group="${LOGIN_PREFIX}_sensor" \
+                -f /opt/attune/role-sql/provision.sql >/dev/null
+              psql -X -q -v app_schema="$APP_SCHEMA" -v login_prefix="$LOGIN_PREFIX" \
+                -v action_group="${LOGIN_PREFIX}_action" -v sensor_group="${LOGIN_PREFIX}_sensor" \
+                -v retirement_owner="${LOGIN_PREFIX}_provisioner" -v retirement_caller="$CALLER_ROLE" \
+                -v api_role="$API_DATABASE_ROLE" -v database="$DATABASE_NAME" \
+                -f /opt/attune/role-sql/provision-retirement.sql >/dev/null
+          env:
+            - {name: PGSERVICE, value: attune-manager-provision}
+            - {name: PGSERVICEFILE, value: /var/run/attune-admin/pg_service.conf}
+            - name: CALLER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ required "managerDatabase.supervisorSecret is required" $settings.supervisorSecret | quote }}
+                  key: password
+            - name: APP_SCHEMA
+              value: {{ .Values.database.schema | quote }}
+            - name: DATABASE_NAME
+              value: {{ .Values.database.database | quote }}
+            - name: LOGIN_PREFIX
+              value: {{ $prefix | quote }}
+            - name: CALLER_ROLE
+              value: {{ printf "%s_supervisor" $prefix | quote }}
+            - name: API_DATABASE_ROLE
+              value: {{ required "managerDatabase.apiDatabaseRole is required" $settings.apiDatabaseRole | quote }}
+          volumeMounts:
+            - name: sql
+              mountPath: /opt/attune/role-sql
+              readOnly: true
+            - {name: admin, mountPath: /var/run/attune-admin, readOnly: true}
+            {{- include "attune.managerDatabaseCAMount" $root | nindent 12 }}
+      volumes:
+        - name: sql
+          configMap:
+            name: {{ $key }}
+        - name: admin
+          secret:
+            secretName: {{ required "managerDatabase.adminSecret is required" $settings.adminSecret | quote }}
+            items: [{key: pg_service.conf, path: pg_service.conf}]
+        {{- include "attune.managerDatabaseCAVolume" $root | nindent 8 }}
+{{- if kindIs "slice" $settings.egress }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $key }}
+spec:
+  podSelector:
+    matchLabels:
+      attune.dev/manager-release: {{ $key }}
+  policyTypes: ["Egress"]
+  egress:
+    {{- toYaml $settings.egress | nindent 4 }}
+{{- end }}
+{{- $seen := dict }}
+{{- range $pool := $settings.pools }}
+{{- if or (not (has $pool.role (list "action" "sensor"))) (not (regexMatch "^[a-z0-9][a-z0-9-]{0,30}$" $pool.name)) }}
+{{- fail "managerDatabase.pools entries require a role and a DNS label name of at most 31 characters" }}
+{{- end }}
+{{- $poolKey := printf "%s-%s" $pool.role $pool.name }}
+{{- if hasKey $seen $poolKey }}{{ fail "managerDatabase.pools contains a duplicate role and pool" }}{{ end }}
+{{- $_ := set $seen $poolKey true }}
+{{- $name := include "attune.managerDatabasePoolName" (dict "root" $root "pool" $pool) }}
+{{- $binary := ternary "attune-agent" "attune-sensor-agent" (eq $pool.role "action") }}
+{{- $replicas := 1 }}
+{{- if hasKey $pool "replicas" }}
+{{- $replicas = $pool.replicas }}
+{{- end }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $name }}
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+spec:
+  clusterIP: None
+  selector:
+    attune.dev/manager-pool: {{ $name }}
+  ports:
+    - name: peer
+      port: 8080
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $name }}
+spec:
+  serviceName: {{ $name }}
+  replicas: {{ ternary 0 (int $replicas) (eq (include "attune.postgresqlMajorCutover" $root) "true") }}
+  selector:
+    matchLabels:
+      attune.dev/manager-pool: {{ $name }}
+  template:
+    metadata:
+      labels:
+        attune.dev/manager-pool: {{ $name }}
+        attune.dev/manager-release: {{ $key }}
+    spec:
+      serviceAccountName: {{ $name }}
+      automountServiceAccountToken: false
+      {{- include "attune.workerPodSecurityContext" (dict "root" $root "worker" $pool) | nindent 6 }}
+      {{- with $root.Values.global.imagePullSecrets }}
+      imagePullSecrets: {{ toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $pool.runtimeClassName }}
+      runtimeClassName: {{ . | quote }}
+      {{- end }}
+      terminationGracePeriodSeconds: 45
+      initContainers:
+        - name: init-agent
+          image: {{ include "attune.image" (dict "root" $root "image" $root.Values.images.agent) | quote }}
+          {{- include "attune.containerSecurityContext" (dict "root" $root "identity" "helper") | nindent 10 }}
+          command: ["/bin/sh", "-ec"]
+          args: ["cp /usr/local/bin/{{ $binary }} /opt/attune/agent/{{ $binary }}; chmod 0755 /opt/attune/agent/{{ $binary }}"]
+          volumeMounts:
+            - {name: agent, mountPath: /opt/attune/agent}
+        {{- include "attune.waitForApiPlatform" $root | nindent 8 }}
+      containers:
+        - name: manager
+          image: {{ required "managerDatabase.pools[].image is required" $pool.image | quote }}
+          {{- include "attune.containerSecurityContext" (dict "root" $root "identity" "worker" "override" ($pool.containerSecurityContext | default dict)) | nindent 10 }}
+          command: ["/opt/attune/agent/{{ $binary }}", "--api-manager"]
+          env:
+            - {name: ATTUNE_API_URL, value: {{ $settings.apiUrl | quote }}}
+            - {name: ATTUNE_MANAGER_POOL, value: {{ $pool.name | quote }}}
+            - name: ATTUNE_MANAGER_NAME
+              valueFrom:
+                fieldRef: {fieldPath: metadata.name}
+            - {name: ATTUNE_MANAGER_ENROLLMENT_FILE, value: /var/run/attune-manager/enrollment/key}
+            - {name: ATTUNE_MANAGER_POD_TOKEN_FILE, value: /var/run/attune-manager/identity/token}
+            - {name: ATTUNE_MANAGER_POSTGRES_URL, value: {{ $settings.postgresUrl | quote }}}
+            - {name: ATTUNE_MANAGER_POSTGRES_SCHEMA, value: {{ $root.Values.database.schema | quote }}}
+            - {name: ATTUNE_WORKLOAD_SANDBOX, value: bubblewrap}
+            - {name: ATTUNE_PACKS_BASE_DIR, value: /opt/attune/packs}
+            - {name: ATTUNE_RUNTIME_ENVS_DIR, value: /opt/attune/runtime_envs}
+            - {name: ATTUNE_ARTIFACTS_DIR, value: /opt/attune/artifacts}
+            {{- if eq $pool.role "action" }}
+            - {name: ATTUNE_MANAGER_LOG_SPOOL_DIR, value: /var/lib/attune-manager/logs}
+            - {name: ATTUNE_MANAGER_LOG_SPOOL_KEY_FILE, value: /var/run/attune-manager/enrollment/log-key}
+            {{- end }}
+            {{- with $pool.env }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          resources:
+            {{- toYaml ($pool.resources | default dict) | nindent 12 }}
+          volumeMounts:
+            - {name: agent, mountPath: /opt/attune/agent, readOnly: true}
+            - {name: enrollment, mountPath: /var/run/attune-manager/enrollment, readOnly: true}
+            - {name: identity, mountPath: /var/run/attune-manager/identity, readOnly: true}
+            - {name: packs, mountPath: /opt/attune/packs}
+            - {name: runtime-envs, mountPath: /opt/attune/runtime_envs}
+            - {name: artifacts, mountPath: /opt/attune/artifacts}
+            {{- if eq $pool.role "action" }}
+            - {name: log-spool, mountPath: /var/lib/attune-manager/logs}
+            {{- end }}
+            {{- include "attune.managerDatabaseCAMount" $root | nindent 12 }}
+      volumes:
+        - {name: agent, emptyDir: {}}
+        - {name: packs, emptyDir: {}}
+        - {name: runtime-envs, emptyDir: {}}
+        - {name: artifacts, emptyDir: {}}
+        - name: enrollment
+          secret:
+            secretName: {{ required "managerDatabase.pools[].enrollmentSecret is required" $pool.enrollmentSecret | quote }}
+        - name: identity
+          projected:
+            sources:
+              - serviceAccountToken:
+                  audience: {{ $key | quote }}
+                  expirationSeconds: 600
+                  path: token
+        {{- include "attune.managerDatabaseCAVolume" $root | nindent 8 }}
+  {{- if eq $pool.role "action" }}
+  volumeClaimTemplates:
+    - metadata:
+        name: log-spool
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        {{- with $pool.spoolStorageClass }}
+        storageClassName: {{ . | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ $pool.spoolSize | default "1Gi" | quote }}
+  {{- end }}
+{{- end }}
+{{- end }}
