@@ -257,6 +257,12 @@ spec:
             {{- if eq $pool.role "action" }}
             - {name: ATTUNE_MANAGER_LOG_SPOOL_DIR, value: /var/lib/attune-manager/logs}
             - {name: ATTUNE_MANAGER_LOG_SPOOL_KEY_FILE, value: /var/run/attune-manager/enrollment/log-key}
+            {{- else }}
+            {{- $notifier := default (printf "wss://%s/ws" (trimPrefix "https://" (trimSuffix "/" $settings.apiUrl))) $pool.notifierWsUrl }}
+            {{- if not (hasPrefix "wss://" $notifier) }}
+            {{- fail "managerDatabase sensor pools require a wss:// notifierWsUrl" }}
+            {{- end }}
+            - {name: ATTUNE_NOTIFIER_WS_URL, value: {{ $notifier | quote }}}
             {{- end }}
             {{- with $pool.env }}
             {{- toYaml . | nindent 12 }}

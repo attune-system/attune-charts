@@ -1,3 +1,6 @@
+database:
+  postgresql:
+    maxConnections: 106
 security:
   existingSecret: attune-test-runtime
 managerDatabase:

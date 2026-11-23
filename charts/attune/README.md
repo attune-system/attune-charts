@@ -1236,7 +1236,12 @@ connection settings only. Mount a custom database CA under `/var/run/attune-post
 by setting `managerDatabase.caSecret`. Its Secret has the key `ca.crt`.
 Install the API trust roots in the manager image if needed. Supply one
 chart-compatible runtime image with Bubblewrap per pool. Ensure the chosen
-container security context and runtime permit its sandbox.
+container security context and runtime permit its sandbox. Sensor pools
+default to the API origin's secure `/ws` endpoint for rule notifications.
+Set the pool's `notifierWsUrl` to the full `wss://` URL when the notifier
+uses a separate route. The connection budget allows two PostgreSQL
+connections per restricted manager during rotation and one additional
+reconciliation connection per supervisor replica.
 
 - Set `managerDatabase.loginPrefix` to a role prefix unique within the
   PostgreSQL cluster, and `apiDatabaseRole` to the role the API uses.
