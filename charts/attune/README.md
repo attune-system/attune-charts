@@ -1247,8 +1247,7 @@ reconciliation connection per supervisor replica.
   PostgreSQL cluster, and `apiDatabaseRole` to the role the API uses.
 - Supply an admin Secret with the key `pg_service.conf` and a service
   named `attune-manager-provision`. Set `host`, `port`, `dbname`, `user`,
-  `password`, and verified TLS settings in that service. The post-migration
-  Helm Job uses this Secret to create the installation roles and install
+  `password`, and verified TLS settings in that service. The Helm Job waits for the credential migration and then uses this Secret to create the installation roles and install
   the guarded operations. The Job's administrator must be able to install
   grants and change ownership of the functions created by migration.
 - Supply a separate supervisor Secret with keys `password` and `url`. The
@@ -1269,6 +1268,12 @@ reconciliation connection per supervisor replica.
   operators. The API receives TokenReview and namespaced Pod reads. The
   supervisor receives Pod reads. Manager ServiceAccounts receive a
   projected audience-specific token and have no Kubernetes API grants.
+
+The agent readiness probe checks the freshness of a local restricted
+PostgreSQL health signal. API-backed work can continue when this connection
+is temporarily unavailable. The chart applies the provisioning Job alongside
+the manager Pods so `helm --wait` can observe manager readiness after the
+Job installs database permissions.
 
 For rollback, set each restricted pool's `replicas` to zero while the
 credential task remains enabled. After the supervisor retires the existing

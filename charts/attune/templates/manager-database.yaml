@@ -71,16 +71,15 @@ data:
     {{- .Files.Get "files/manager-db/provision.sql" | nindent 4 }}
   provision-retirement.sql: |
     {{- .Files.Get "files/manager-db/provision-retirement.sql" | nindent 4 }}
+{{- if ne .Values.database.postgresql.majorUpgradeStage "cutover" }}
 ---
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ $key }}
-  annotations:
-    helm.sh/hook: post-install,post-upgrade
-    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+  name: {{ printf "%s-%v" ($key | trunc 48 | trimSuffix "-") .Release.Revision }}
 spec:
   activeDeadlineSeconds: 320
+  ttlSecondsAfterFinished: 600
   backoffLimit: 2
   template:
     spec:
@@ -153,6 +152,7 @@ spec:
             secretName: {{ required "managerDatabase.adminSecret is required" $settings.adminSecret | quote }}
             items: [{key: pg_service.conf, path: pg_service.conf}]
         {{- include "attune.managerDatabaseCAVolume" $root | nindent 8 }}
+{{- end }}
 {{- if kindIs "slice" $settings.egress }}
 ---
 apiVersion: networking.k8s.io/v1
@@ -240,6 +240,12 @@ spec:
           image: {{ required "managerDatabase.pools[].image is required" $pool.image | quote }}
           {{- include "attune.containerSecurityContext" (dict "root" $root "identity" "worker" "override" ($pool.containerSecurityContext | default dict)) | nindent 10 }}
           command: ["/opt/attune/agent/{{ $binary }}", "--api-manager"]
+          readinessProbe:
+            exec:
+              command: ["/opt/attune/agent/{{ $binary }}", "--check-database-ready"]
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 1
           env:
             - {name: ATTUNE_API_URL, value: {{ $settings.apiUrl | quote }}}
             - {name: ATTUNE_MANAGER_POOL, value: {{ $pool.name | quote }}}
@@ -250,6 +256,7 @@ spec:
             - {name: ATTUNE_MANAGER_POD_TOKEN_FILE, value: /var/run/attune-manager/identity/token}
             - {name: ATTUNE_MANAGER_POSTGRES_URL, value: {{ $settings.postgresUrl | quote }}}
             - {name: ATTUNE_MANAGER_POSTGRES_SCHEMA, value: {{ $root.Values.database.schema | quote }}}
+            - {name: ATTUNE_MANAGER_POSTGRES_READY_FILE, value: /var/run/attune-manager/status/postgres-ready}
             - {name: ATTUNE_WORKLOAD_SANDBOX, value: bubblewrap}
             - {name: ATTUNE_PACKS_BASE_DIR, value: /opt/attune/packs}
             - {name: ATTUNE_RUNTIME_ENVS_DIR, value: /opt/attune/runtime_envs}
@@ -273,6 +280,7 @@ spec:
             - {name: agent, mountPath: /opt/attune/agent, readOnly: true}
             - {name: enrollment, mountPath: /var/run/attune-manager/enrollment, readOnly: true}
             - {name: identity, mountPath: /var/run/attune-manager/identity, readOnly: true}
+            - {name: status, mountPath: /var/run/attune-manager/status}
             - {name: packs, mountPath: /opt/attune/packs}
             - {name: runtime-envs, mountPath: /opt/attune/runtime_envs}
             - {name: artifacts, mountPath: /opt/attune/artifacts}
@@ -285,6 +293,7 @@ spec:
         - {name: packs, emptyDir: {}}
         - {name: runtime-envs, emptyDir: {}}
         - {name: artifacts, emptyDir: {}}
+        - {name: status, emptyDir: {}}
         - name: enrollment
           secret:
             secretName: {{ required "managerDatabase.pools[].enrollmentSecret is required" $pool.enrollmentSecret | quote }}
