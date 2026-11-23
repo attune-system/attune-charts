@@ -1259,8 +1259,9 @@ reconciliation connection per supervisor replica.
   SHA-256 digest in `enrollmentDigest`. Action pools also require a stable
   `log-key` in the Secret and a working RWO storage class for the custody
   spool. Use separate action pools with separate Secrets for per-slot
-  custody keys. The chart projects each pool's Pod token with the release
-  audience.
+  custody keys. The action manager creates a private custody directory
+  inside its claim. The chart projects each pool's Pod token with the
+  release audience.
 - Set `managerDatabase.egress` to the site's Kubernetes egress rules when
   the chart should create a NetworkPolicy. Include DNS, the configured API
   and PostgreSQL endpoints, and any egress required by workloads.

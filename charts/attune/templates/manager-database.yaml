@@ -262,7 +262,7 @@ spec:
             - {name: ATTUNE_RUNTIME_ENVS_DIR, value: /opt/attune/runtime_envs}
             - {name: ATTUNE_ARTIFACTS_DIR, value: /opt/attune/artifacts}
             {{- if eq $pool.role "action" }}
-            - {name: ATTUNE_MANAGER_LOG_SPOOL_DIR, value: /var/lib/attune-manager/logs}
+            - {name: ATTUNE_MANAGER_LOG_SPOOL_DIR, value: /var/lib/attune-manager/logs/custody}
             - {name: ATTUNE_MANAGER_LOG_SPOOL_KEY_FILE, value: /var/run/attune-manager/enrollment/log-key}
             {{- else }}
             {{- $notifier := default (printf "wss://%s/ws" (trimPrefix "https://" (trimSuffix "/" $settings.apiUrl))) $pool.notifierWsUrl }}
